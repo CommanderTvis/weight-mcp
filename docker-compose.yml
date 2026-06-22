@@ -1,0 +1,12 @@
+# Default compose file: builds the image locally and runs it.
+# For a real deployment (pull a published image + put it behind HTTPS), copy
+# docker-compose.template.yml and adapt it.
+services:
+  weight-mcp:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data

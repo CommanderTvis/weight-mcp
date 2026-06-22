@@ -1,0 +1,39 @@
+# Production template. Copy to docker-compose.yml on your host and adapt.
+#
+# claude.ai connects from Anthropic's cloud over public HTTPS, so this server
+# MUST sit behind a TLS-terminating reverse proxy (Caddy / Traefik / nginx) with
+# a real certificate. WEIGHT_MCP_PUBLIC_BASE_URL must equal that public origin.
+services:
+  weight-mcp:
+    image: ghcr.io/OWNER/weight-mcp:latest # <-- set to your published image
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - "8000"
+    volumes:
+      - weight-data:/app/data
+    # Example: join the network your reverse proxy lives on.
+    # networks: [edge]
+
+  # Minimal example TLS terminator. Replace with your own proxy if you have one.
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [weight-mcp]
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+# Example Caddyfile (next to this file):
+#   weight.example.com {
+#       reverse_proxy weight-mcp:8000
+#   }
+
+volumes:
+  weight-data:
+  caddy-data:
+  caddy-config:
