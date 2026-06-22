@@ -41,7 +41,7 @@ ACCESS_TTL = 3600  # 1 hour
 REFRESH_TTL = 30 * 24 * 3600  # 30 days
 TXN_TTL = 600  # 10 minutes to type the password
 CODE_TTL = 300  # 5 minutes
-VIEW_TTL = 3600  # dashboard fallback link valid for 1 hour
+DASHBOARD_COOKIE_TTL = 30 * 24 * 3600  # dashboard browser session: 30 days
 SCOPE = "user"
 _OWNER = "owner"  # the single subject; there is only ever one user
 
@@ -193,14 +193,14 @@ class PasswordOAuthProvider(
         # invalidate every token at once.
         return None
 
-    # --- dashboard fallback link --------------------------------------------
+    # --- dashboard browser session (cookie) ---------------------------------
 
-    def dashboard_link_token(self) -> str:
-        """A short-lived signed token authorizing one dashboard page view."""
-        return self._encode_token("view", _OWNER, VIEW_TTL)
+    def dashboard_cookie(self) -> str:
+        """A signed cookie value granting dashboard access after a password login."""
+        return self._encode_token("dash", _OWNER, DASHBOARD_COOKIE_TTL)
 
-    def dashboard_token_valid(self, token: str) -> bool:
-        return self._decode_token(token, expected="view") is not None
+    def dashboard_cookie_valid(self, cookie: str) -> bool:
+        return self._decode_token(cookie, expected="dash") is not None
 
     # --- jwt helpers --------------------------------------------------------
 

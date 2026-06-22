@@ -22,7 +22,7 @@ from .config import GoalMode, Settings
 from .db import Database
 from .models import DEFAULT_GOALS, Goals, NutritionFacts, Progress
 from .nutrition import NutritionLookup
-from .oauth import SCOPE, PasswordOAuthProvider
+from .oauth import DASHBOARD_COOKIE_TTL, SCOPE, PasswordOAuthProvider
 from .ui import render_dashboard
 from .web import login_page
 
@@ -30,6 +30,7 @@ DASHBOARD_URI = "ui://weight-mcp/dashboard"
 UI_MIME = "text/html;profile=mcp-app"
 LOGIN_PATH = "/login"
 DASHBOARD_PATH = "/dashboard"
+DASHBOARD_COOKIE = "wm_dash"
 
 PROMPT_TEXT = """\
 You are a calorie and protein counter. The user will tell you what they ate \
@@ -233,10 +234,11 @@ def create_app(settings: Settings) -> Starlette:
         dashboard"), at the beginning of a session, or whenever they ask how they're
         doing. Safe and read-only, so call it proactively without asking first.
 
-        Returns a link to the dashboard; ALWAYS show the user that link so they can
-        open it, since the inline panel may not render in every client."""
+        Returns a link to the dashboard; ALWAYS show the user that link verbatim so
+        they can open it, since the inline panel may not render in every client. The
+        page asks for the password once, then remembers the browser."""
         p = current_progress()
-        link = f"{settings.issuer}{DASHBOARD_PATH}?t={provider.dashboard_link_token()}"
+        link = f"{settings.issuer}{DASHBOARD_PATH}"
         return (
             f"Open your dashboard: {link}\n\n"
             f"Today: {p.kcal:.0f}/{p.kcal_target} kcal, "
@@ -257,40 +259,61 @@ def create_app(settings: Settings) -> Starlette:
             txn = request.query_params.get("txn", "")
             if not provider.txn_valid(txn):
                 return HTMLResponse(
-                    login_page(LOGIN_PATH, txn, error="This link expired — reconnect from Claude."),
+                    login_page(
+                        LOGIN_PATH, txn=txn, error="This link expired — reconnect from Claude."
+                    ),
                     status_code=400,
                 )
-            return HTMLResponse(login_page(LOGIN_PATH, txn))
+            return HTMLResponse(login_page(LOGIN_PATH, txn=txn))
 
         form = await request.form()
         txn = str(form.get("txn", ""))
         password = str(form.get("password", ""))
         if not provider.txn_valid(txn):
             return HTMLResponse(
-                login_page(LOGIN_PATH, txn, error="This link expired — reconnect from Claude."),
+                login_page(LOGIN_PATH, txn=txn, error="This link expired — reconnect from Claude."),
                 status_code=400,
             )
         if not provider.password_ok(password):
             return HTMLResponse(
-                login_page(LOGIN_PATH, txn, error="Incorrect password."), status_code=401
+                login_page(LOGIN_PATH, txn=txn, error="Incorrect password."), status_code=401
             )
         redirect = provider.complete_login(txn)
         if redirect is None:
             return HTMLResponse(
-                login_page(LOGIN_PATH, txn, error="This link expired — reconnect from Claude."),
+                login_page(LOGIN_PATH, txn=txn, error="This link expired — reconnect from Claude."),
                 status_code=400,
             )
         return RedirectResponse(redirect, status_code=302)
 
     # --- dashboard web page (fallback link target) --------------------------
 
-    @mcp.custom_route(DASHBOARD_PATH, methods=["GET"])  # type: ignore[untyped-decorator]
+    @mcp.custom_route(DASHBOARD_PATH, methods=["GET", "POST"])  # type: ignore[untyped-decorator]
     async def dashboard(request: Request) -> Response:
-        if not provider.dashboard_token_valid(request.query_params.get("t", "")):
+        # A stable, tokenless URL the model can reproduce verbatim. Access is
+        # gated by a password-backed cookie set on first visit, not a URL token.
+        if provider.dashboard_cookie_valid(request.cookies.get(DASHBOARD_COOKIE, "")):
+            return HTMLResponse(dashboard_html())
+
+        subtitle = "Enter your password to view your dashboard."
+        if request.method == "POST":
+            form = await request.form()
+            if provider.password_ok(str(form.get("password", ""))):
+                response: Response = RedirectResponse(DASHBOARD_PATH, status_code=302)
+                response.set_cookie(
+                    DASHBOARD_COOKIE,
+                    provider.dashboard_cookie(),
+                    max_age=DASHBOARD_COOKIE_TTL,
+                    httponly=True,
+                    secure=True,
+                    samesite="lax",
+                    path=DASHBOARD_PATH,
+                )
+                return response
             return HTMLResponse(
-                "<h1>Link expired</h1><p>Ask weight-mcp to show your dashboard again.</p>",
+                login_page(DASHBOARD_PATH, subtitle=subtitle, error="Incorrect password."),
                 status_code=401,
             )
-        return HTMLResponse(dashboard_html())
+        return HTMLResponse(login_page(DASHBOARD_PATH, subtitle=subtitle))
 
     return mcp.streamable_http_app()

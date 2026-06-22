@@ -23,7 +23,7 @@ _PAGE = """<!doctype html>
 <body>
   <form method="post" action="{action}">
     <h1>weight-mcp</h1>
-    <p>Enter your password to connect this server to Claude.</p>
+    <p>{subtitle}</p>
     <input type="hidden" name="txn" value="{txn}">
     <input type="password" name="password" placeholder="Password" autofocus required>
     <button type="submit">Connect</button>
@@ -32,6 +32,17 @@ _PAGE = """<!doctype html>
 </body></html>"""
 
 
-def login_page(action: str, txn: str, *, error: str | None = None) -> str:
+def login_page(
+    action: str,
+    *,
+    txn: str = "",
+    subtitle: str = "Enter your password to connect this server to Claude.",
+    error: str | None = None,
+) -> str:
     error_html = f'<div class="error">{escape(error)}</div>' if error else ""
-    return _PAGE.format(action=escape(action), txn=escape(txn), error=error_html)
+    return _PAGE.format(
+        action=escape(action),
+        txn=escape(txn),
+        subtitle=escape(subtitle),
+        error=error_html,
+    )

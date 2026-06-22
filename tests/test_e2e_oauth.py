@@ -162,23 +162,41 @@ def test_tampered_txn_rejected(client: TestClient) -> None:
     assert "expired" in bad.text.lower()
 
 
-def test_dashboard_fallback_link(client: TestClient, settings: Settings) -> None:
+def test_dashboard_cookie_gate(client: TestClient, settings: Settings) -> None:
     from weight_mcp.db import Database
     from weight_mcp.oauth import PasswordOAuthProvider
+    from weight_mcp.server import DASHBOARD_COOKIE
 
-    # Tokens are signed with the password-derived key, so a provider built from
-    # the same settings mints a token the running app accepts (stateless).
+    # No cookie → the password form (a stable URL), not the dashboard.
+    form = client.get("/dashboard")
+    assert form.status_code == 200
+    assert "password" in form.text.lower()
+    assert "Today" not in form.text
+
+    # Wrong password is rejected.
+    assert client.post("/dashboard", data={"password": "nope"}).status_code == 401
+
+    # Correct password sets a cookie and redirects.
+    ok = client.post("/dashboard", data={"password": PASSWORD})
+    assert ok.status_code == 302
+    assert DASHBOARD_COOKIE in ok.headers.get("set-cookie", "")
+
+    # A valid cookie renders the dashboard. Cookies are signed with the
+    # password-derived key, so a provider from the same settings mints one the
+    # app accepts; inject it directly (TestClient won't resend a Secure cookie
+    # over http).
     provider = PasswordOAuthProvider(
         password=settings.password,
         resource_url=RESOURCE,
         login_path="/login",
         db=Database(settings.database_path),
     )
-    assert client.get("/dashboard").status_code == 401
-    assert client.get("/dashboard?t=nope").status_code == 401
-    ok = client.get(f"/dashboard?t={provider.dashboard_link_token()}")
-    assert ok.status_code == 200
-    assert "Today" in ok.text
+    page = client.get(
+        "/dashboard",
+        headers={"Cookie": f"{DASHBOARD_COOKIE}={provider.dashboard_cookie()}"},
+    )
+    assert page.status_code == 200
+    assert "Today" in page.text
 
 
 def test_garbage_token_is_rejected(client: TestClient) -> None:
