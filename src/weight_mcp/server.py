@@ -5,8 +5,6 @@ metadata, ``/authorize``, ``/token``, ``/register`` and the 401/``WWW-Authentica
 handling for us; we add the password form at ``/login`` and the dashboard UI.
 """
 
-from __future__ import annotations
-
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date

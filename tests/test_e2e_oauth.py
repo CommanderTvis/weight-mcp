@@ -5,8 +5,6 @@ Registration, the PKCE authorize redirect, the password gate, the token exchange
 and a finally-authenticated MCP request.
 """
 
-from __future__ import annotations
-
 import base64
 import hashlib
 import os

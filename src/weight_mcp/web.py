@@ -1,7 +1,5 @@
 """The human-facing OAuth page: one password field, nothing else."""
 
-from __future__ import annotations
-
 from html import escape
 
 _PAGE = """<!doctype html>

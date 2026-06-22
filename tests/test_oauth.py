@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from weight_mcp.db import Database
 from weight_mcp.oauth import PasswordOAuthProvider
 

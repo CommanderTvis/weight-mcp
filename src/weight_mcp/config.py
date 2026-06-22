@@ -4,8 +4,6 @@ Everything is read from the environment (``.env`` in local/dev). There is no
 per-user config: this server is designed for exactly one person who also hosts it.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 from typing import Literal
 

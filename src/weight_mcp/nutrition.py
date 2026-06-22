@@ -2,12 +2,12 @@
 
 Open Food Facts is the primary source (no key, strong EU/German coverage).
 USDA FoodData Central is an optional secondary source for generic foods (needs a
-free key). Everything is normalized to :class:`~weight_mcp.models.NutritionFacts`.
+free key). External JSON is parsed into typed DTOs (below) before anything reads
+it, so the rest of the module never touches a raw dict.
 """
 
-from __future__ import annotations
-
 import httpx
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .config import Settings
 from .models import NutritionFacts
@@ -18,14 +18,91 @@ _USDA_BASE = "https://api.nal.usda.gov/fdc/v1"
 _OFF_FIELDS = "code,product_name,brands,nutriments"
 
 
-def _f(value: object) -> float | None:
-    """Coerce a JSON number to float, tolerating strings and missing values."""
-    if value is None or value == "":
-        return None
-    try:
-        return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return None
+# --- Open Food Facts response DTOs ------------------------------------------
+
+
+class OffNutriments(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    # ``energy_100g`` is kilojoules, so it is deliberately not mapped here.
+    kcal_per_100g: float | None = Field(default=None, alias="energy-kcal_100g")
+    protein_g_per_100g: float | None = Field(default=None, alias="proteins_100g")
+    carbs_g_per_100g: float | None = Field(default=None, alias="carbohydrates_100g")
+    fat_g_per_100g: float | None = Field(default=None, alias="fat_100g")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _blank_to_none(cls, value: object) -> object:
+        return None if value == "" else value
+
+
+class OffProduct(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    code: str | None = None
+    product_name: str | None = None
+    brands: str | None = None
+    nutriments: OffNutriments = Field(default_factory=OffNutriments)
+
+
+class OffProductResponse(BaseModel):
+    status: int = 0
+    product: OffProduct | None = None
+
+
+class OffSearchResponse(BaseModel):
+    products: list[OffProduct] = Field(default_factory=list)
+
+
+# --- USDA FoodData Central response DTOs ------------------------------------
+
+
+class UsdaNutrient(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    number: str | None = Field(default=None, alias="nutrientNumber")
+    value: float | None = None
+
+
+class UsdaFood(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    fdc_id: int | None = Field(default=None, alias="fdcId")
+    description: str | None = None
+    brand_owner: str | None = Field(default=None, alias="brandOwner")
+    nutrients: list[UsdaNutrient] = Field(default_factory=list, alias="foodNutrients")
+
+
+class UsdaSearchResponse(BaseModel):
+    foods: list[UsdaFood] = Field(default_factory=list)
+
+
+def off_to_facts(product: OffProduct) -> NutritionFacts:
+    n = product.nutriments
+    return NutritionFacts(
+        name=product.product_name or "Unknown product",
+        brand=product.brands or None,
+        source="off",
+        source_id=product.code,
+        kcal_per_100g=n.kcal_per_100g,
+        protein_g_per_100g=n.protein_g_per_100g,
+        carbs_g_per_100g=n.carbs_g_per_100g,
+        fat_g_per_100g=n.fat_g_per_100g,
+    )
+
+
+def usda_to_facts(food: UsdaFood) -> NutritionFacts:
+    by_number = {n.number: n.value for n in food.nutrients if n.number}
+    return NutritionFacts(
+        name=food.description or "Unknown food",
+        brand=food.brand_owner or None,
+        source="usda",
+        source_id=str(food.fdc_id) if food.fdc_id is not None else None,
+        kcal_per_100g=by_number.get("208"),
+        protein_g_per_100g=by_number.get("203"),
+        carbs_g_per_100g=by_number.get("205"),
+        fat_g_per_100g=by_number.get("204"),
+    )
 
 
 class NutritionLookup:
@@ -58,12 +135,10 @@ class NutritionLookup:
         )
         if resp.status_code != httpx.codes.OK:
             return None
-        data = resp.json()
-        if data.get("status") != 1:
+        parsed = OffProductResponse.model_validate(resp.json())
+        if parsed.status != 1 or parsed.product is None:
             return None
-        return self._off_to_facts(data.get("product", {}))
-
-    # --- Open Food Facts ----------------------------------------------------
+        return off_to_facts(parsed.product)
 
     async def _off_search(self, query: str, *, limit: int) -> list[NutritionFacts]:
         resp = await self._client.get(
@@ -79,25 +154,8 @@ class NutritionLookup:
         )
         if resp.status_code != httpx.codes.OK:
             return []
-        products = resp.json().get("products", [])
-        return [self._off_to_facts(p) for p in products[:limit]]
-
-    def _off_to_facts(self, product: dict[str, object]) -> NutritionFacts:
-        nutriments = product.get("nutriments", {})
-        if not isinstance(nutriments, dict):
-            nutriments = {}
-        return NutritionFacts(
-            name=str(product.get("product_name") or "Unknown product"),
-            brand=str(product["brands"]) if product.get("brands") else None,
-            source="off",
-            source_id=str(product["code"]) if product.get("code") else None,
-            kcal_per_100g=_f(nutriments.get("energy-kcal_100g")),
-            protein_g_per_100g=_f(nutriments.get("proteins_100g")),
-            carbs_g_per_100g=_f(nutriments.get("carbohydrates_100g")),
-            fat_g_per_100g=_f(nutriments.get("fat_100g")),
-        )
-
-    # --- USDA FoodData Central ---------------------------------------------
+        parsed = OffSearchResponse.model_validate(resp.json())
+        return [off_to_facts(p) for p in parsed.products[:limit]]
 
     async def _usda_search(self, query: str, *, limit: int) -> list[NutritionFacts]:
         resp = await self._client.get(
@@ -110,24 +168,5 @@ class NutritionLookup:
         )
         if resp.status_code != httpx.codes.OK:
             return []
-        foods = resp.json().get("foods", [])
-        return [self._usda_to_facts(f) for f in foods[:limit]]
-
-    def _usda_to_facts(self, food: dict[str, object]) -> NutritionFacts:
-        by_number: dict[str, float | None] = {}
-        nutrients = food.get("foodNutrients", [])
-        if isinstance(nutrients, list):
-            for n in nutrients:
-                if isinstance(n, dict):
-                    number = str(n.get("nutrientNumber", ""))
-                    by_number[number] = _f(n.get("value"))
-        return NutritionFacts(
-            name=str(food.get("description") or "Unknown food"),
-            brand=str(food["brandOwner"]) if food.get("brandOwner") else None,
-            source="usda",
-            source_id=str(food["fdcId"]) if food.get("fdcId") else None,
-            kcal_per_100g=by_number.get("208"),
-            protein_g_per_100g=by_number.get("203"),
-            carbs_g_per_100g=by_number.get("205"),
-            fat_g_per_100g=by_number.get("204"),
-        )
+        parsed = UsdaSearchResponse.model_validate(resp.json())
+        return [usda_to_facts(f) for f in parsed.foods[:limit]]

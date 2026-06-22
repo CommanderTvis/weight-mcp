@@ -15,12 +15,12 @@ Design choices that keep this stateless and restart-safe:
   persisted in SQLite.
 """
 
-from __future__ import annotations
-
 import hashlib
 import hmac
 import secrets
 import time
+from dataclasses import dataclass
+from typing import Any
 
 import jwt
 from mcp.server.auth.provider import (
@@ -42,8 +42,21 @@ SCOPE = "user"
 _OWNER = "owner"  # the single subject; there is only ever one user
 
 
-def _as_int(value: object) -> int:
-    return int(value) if isinstance(value, int | float) else 0
+@dataclass(slots=True)
+class PendingAuthorization:
+    """An in-flight ``/authorize`` request, waiting on the password form."""
+
+    client_id: str
+    params: AuthorizationParams
+
+
+@dataclass(slots=True)
+class TokenClaims:
+    """The subset of JWT claims this server cares about."""
+
+    typ: str
+    client_id: str
+    expires_at: int
 
 
 def _signing_key(password: str) -> bytes:
@@ -60,9 +73,7 @@ class PasswordOAuthProvider(
         self._resource = resource_url
         self._login_path = login_path
         self._db = db
-        # txn id -> (client_id, params) for an in-flight authorize request
-        self._pending: dict[str, tuple[str, AuthorizationParams]] = {}
-        # code -> AuthorizationCode, ephemeral
+        self._pending: dict[str, PendingAuthorization] = {}
         self._codes: dict[str, AuthorizationCode] = {}
 
     # --- clients (persisted) ------------------------------------------------
@@ -83,7 +94,7 @@ class PasswordOAuthProvider(
         self, client: OAuthClientInformationFull, params: AuthorizationParams
     ) -> str:
         txn = secrets.token_urlsafe(24)
-        self._pending[txn] = (client.client_id or "", params)
+        self._pending[txn] = PendingAuthorization(client_id=client.client_id or "", params=params)
         return f"{self._login_path}?txn={txn}"
 
     def password_ok(self, password: str) -> bool:
@@ -94,16 +105,16 @@ class PasswordOAuthProvider(
 
     def complete_login(self, txn: str) -> str | None:
         """Consume a verified login: mint an auth code and return the redirect URL."""
-        entry = self._pending.pop(txn, None)
-        if entry is None:
+        pending = self._pending.pop(txn, None)
+        if pending is None:
             return None
-        client_id, params = entry
+        params = pending.params
         code = secrets.token_urlsafe(32)
         self._codes[code] = AuthorizationCode(
             code=code,
             scopes=[SCOPE],
             expires_at=time.time() + CODE_TTL,
-            client_id=client_id,
+            client_id=pending.client_id,
             code_challenge=params.code_challenge,
             redirect_uri=params.redirect_uri,
             redirect_uri_provided_explicitly=params.redirect_uri_provided_explicitly,
@@ -131,14 +142,14 @@ class PasswordOAuthProvider(
     async def load_refresh_token(
         self, client: OAuthClientInformationFull, refresh_token: str
     ) -> RefreshToken | None:
-        payload = self._decode(refresh_token, expected="refresh")
-        if payload is None or payload.get("cid") != client.client_id:
+        claims = self._decode(refresh_token, expected="refresh")
+        if claims is None or claims.client_id != client.client_id:
             return None
         return RefreshToken(
             token=refresh_token,
             client_id=client.client_id or "",
             scopes=[SCOPE],
-            expires_at=_as_int(payload["exp"]),
+            expires_at=claims.expires_at,
         )
 
     async def exchange_refresh_token(
@@ -151,14 +162,14 @@ class PasswordOAuthProvider(
         return self._issue(client.client_id or "")
 
     async def load_access_token(self, token: str) -> AccessToken | None:
-        payload = self._decode(token, expected="access", audience=self._resource)
-        if payload is None:
+        claims = self._decode(token, expected="access", audience=self._resource)
+        if claims is None:
             return None
         return AccessToken(
             token=token,
-            client_id=str(payload.get("cid", "")),
+            client_id=claims.client_id,
             scopes=[SCOPE],
-            expires_at=_as_int(payload["exp"]),
+            expires_at=claims.expires_at,
             resource=self._resource,
             subject=_OWNER,
         )
@@ -171,43 +182,32 @@ class PasswordOAuthProvider(
     # --- jwt helpers --------------------------------------------------------
 
     def _issue(self, client_id: str) -> OAuthToken:
-        now = int(time.time())
-        access = jwt.encode(
-            {
-                "sub": _OWNER,
-                "cid": client_id,
-                "aud": self._resource,
-                "typ": "access",
-                "iat": now,
-                "exp": now + ACCESS_TTL,
-            },
-            self._key,
-            algorithm="HS256",
-        )
-        refresh = jwt.encode(
-            {
-                "sub": _OWNER,
-                "cid": client_id,
-                "typ": "refresh",
-                "iat": now,
-                "exp": now + REFRESH_TTL,
-            },
-            self._key,
-            algorithm="HS256",
-        )
         return OAuthToken(
-            access_token=access,
+            access_token=self._encode("access", client_id, ACCESS_TTL, audience=self._resource),
             token_type="Bearer",
             expires_in=ACCESS_TTL,
             scope=SCOPE,
-            refresh_token=refresh,
+            refresh_token=self._encode("refresh", client_id, REFRESH_TTL),
         )
+
+    def _encode(self, typ: str, client_id: str, ttl: int, *, audience: str | None = None) -> str:
+        now = int(time.time())
+        payload: dict[str, Any] = {
+            "sub": _OWNER,
+            "cid": client_id,
+            "typ": typ,
+            "iat": now,
+            "exp": now + ttl,
+        }
+        if audience is not None:
+            payload["aud"] = audience
+        return jwt.encode(payload, self._key, algorithm="HS256")
 
     def _decode(
         self, token: str, *, expected: str, audience: str | None = None
-    ) -> dict[str, object] | None:
+    ) -> TokenClaims | None:
         try:
-            payload: dict[str, object] = jwt.decode(
+            payload = jwt.decode(
                 token,
                 self._key,
                 algorithms=["HS256"],
@@ -218,4 +218,8 @@ class PasswordOAuthProvider(
             return None
         if payload.get("typ") != expected:
             return None
-        return payload
+        return TokenClaims(
+            typ=expected,
+            client_id=str(payload.get("cid", "")),
+            expires_at=int(payload["exp"]),
+        )

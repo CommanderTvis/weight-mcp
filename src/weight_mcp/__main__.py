@@ -1,7 +1,5 @@
 """Run the server with uvicorn."""
 
-from __future__ import annotations
-
 import uvicorn
 
 from .config import load_settings

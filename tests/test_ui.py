@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import date, datetime
 
 from weight_mcp.models import FoodLog, Progress, WeightEntry

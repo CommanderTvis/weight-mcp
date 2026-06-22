@@ -5,8 +5,6 @@ one file, zero ops, backup = copy the file. Datetimes are stored as ISO-8601
 strings in the server's local time (the self-hoster runs it in their own zone).
 """
 
-from __future__ import annotations
-
 import sqlite3
 from datetime import date, datetime
 from pathlib import Path

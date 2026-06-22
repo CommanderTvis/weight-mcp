@@ -5,8 +5,6 @@ self-contained: data is injected server-side and the weight graph is hand-drawn
 inline SVG. No external scripts, styles, or fonts.
 """
 
-from __future__ import annotations
-
 from html import escape
 
 from .models import FoodLog, Progress, WeightEntry
