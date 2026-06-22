@@ -162,6 +162,25 @@ def test_tampered_txn_rejected(client: TestClient) -> None:
     assert "expired" in bad.text.lower()
 
 
+def test_dashboard_fallback_link(client: TestClient, settings: Settings) -> None:
+    from weight_mcp.db import Database
+    from weight_mcp.oauth import PasswordOAuthProvider
+
+    # Tokens are signed with the password-derived key, so a provider built from
+    # the same settings mints a token the running app accepts (stateless).
+    provider = PasswordOAuthProvider(
+        password=settings.password,
+        resource_url=RESOURCE,
+        login_path="/login",
+        db=Database(settings.database_path),
+    )
+    assert client.get("/dashboard").status_code == 401
+    assert client.get("/dashboard?t=nope").status_code == 401
+    ok = client.get(f"/dashboard?t={provider.dashboard_link_token()}")
+    assert ok.status_code == 200
+    assert "Today" in ok.text
+
+
 def test_garbage_token_is_rejected(client: TestClient) -> None:
     resp = client.post(
         "/",

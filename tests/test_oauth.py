@@ -44,6 +44,17 @@ async def test_refresh_token_not_accepted_as_access(db: Database) -> None:
     assert await provider.load_access_token(token.refresh_token) is None
 
 
+def test_dashboard_token_roundtrip(db: Database) -> None:
+    provider = make_provider(db)
+    token = provider.dashboard_link_token()
+    assert provider.dashboard_token_valid(token)
+    assert not provider.dashboard_token_valid("garbage")
+    # An access token must not pass as a dashboard view token (typ mismatch).
+    assert not provider.dashboard_token_valid(provider._issue("c1").access_token)
+    # Rotating the password invalidates the link.
+    assert not make_provider(db, "other").dashboard_token_valid(token)
+
+
 def test_invalid_txn_rejected(db: Database) -> None:
     provider = make_provider(db)
     assert not provider.txn_valid("nope")

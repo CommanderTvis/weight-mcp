@@ -12,8 +12,8 @@ from datetime import date
 
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.server.fastmcp import FastMCP
-from mcp.types import EmbeddedResource, TextResourceContents, ToolAnnotations
-from pydantic import AnyHttpUrl, AnyUrl
+from mcp.types import ToolAnnotations
+from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
@@ -29,6 +29,7 @@ from .web import login_page
 DASHBOARD_URI = "ui://weight-mcp/dashboard"
 UI_MIME = "text/html;profile=mcp-app"
 LOGIN_PATH = "/login"
+DASHBOARD_PATH = "/dashboard"
 
 PROMPT_TEXT = """\
 You are a calorie and protein counter. The user will tell you what they ate \
@@ -210,7 +211,14 @@ def create_app(settings: Settings) -> Starlette:
 
     @mcp.tool(
         title="Open weight-mcp dashboard",
-        meta={"ui": {"resourceUri": DASHBOARD_URI}},
+        # Links the tool to its MCP Apps UI resource. The nested key is the
+        # current spec; the flat alias is kept for host back-compat. Hosts that
+        # render MCP Apps fetch DASHBOARD_URI; everyone else gets the text below,
+        # which always includes a working web link.
+        meta={
+            "ui": {"resourceUri": DASHBOARD_URI, "visibility": ["model", "app"]},
+            "ui/resourceUri": DASHBOARD_URI,
+        },
         annotations=ToolAnnotations(
             title="Open weight-mcp dashboard",
             readOnlyHint=True,
@@ -218,19 +226,21 @@ def create_app(settings: Settings) -> Starlette:
             openWorldHint=False,
         ),
     )
-    def show_dashboard() -> EmbeddedResource:
+    def show_dashboard() -> str:
         """Open the weight-mcp dashboard: weight graph, recently eaten, and today's
         calorie/protein progress. This is the entry point — call it when the user
         starts or opens weight-mcp (e.g. "start weight mcp", "open weight", "show my
         dashboard"), at the beginning of a session, or whenever they ask how they're
-        doing. Safe and read-only, so call it proactively without asking first."""
-        return EmbeddedResource(
-            type="resource",
-            resource=TextResourceContents(
-                uri=AnyUrl(DASHBOARD_URI),
-                mimeType=UI_MIME,
-                text=dashboard_html(),
-            ),
+        doing. Safe and read-only, so call it proactively without asking first.
+
+        Returns a link to the dashboard; ALWAYS show the user that link so they can
+        open it, since the inline panel may not render in every client."""
+        p = current_progress()
+        link = f"{settings.issuer}{DASHBOARD_PATH}?t={provider.dashboard_link_token()}"
+        return (
+            f"Open your dashboard: {link}\n\n"
+            f"Today: {p.kcal:.0f}/{p.kcal_target} kcal, "
+            f"{p.protein_g:.0f}/{p.protein_target_g} g protein."
         )
 
     # --- UI resource (host fetches it via the tool's _meta.ui.resourceUri) --
@@ -271,5 +281,16 @@ def create_app(settings: Settings) -> Starlette:
                 status_code=400,
             )
         return RedirectResponse(redirect, status_code=302)
+
+    # --- dashboard web page (fallback link target) --------------------------
+
+    @mcp.custom_route(DASHBOARD_PATH, methods=["GET"])  # type: ignore[untyped-decorator]
+    async def dashboard(request: Request) -> Response:
+        if not provider.dashboard_token_valid(request.query_params.get("t", "")):
+            return HTMLResponse(
+                "<h1>Link expired</h1><p>Ask weight-mcp to show your dashboard again.</p>",
+                status_code=401,
+            )
+        return HTMLResponse(dashboard_html())
 
     return mcp.streamable_http_app()
