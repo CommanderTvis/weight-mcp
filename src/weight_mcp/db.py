@@ -9,7 +9,7 @@ import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 
-from .models import DayTotals, FoodLog, WeightEntry
+from .models import DayTotals, FoodLog, Goals, WeightEntry
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS weight_entries (
@@ -39,6 +39,14 @@ CREATE INDEX IF NOT EXISTS idx_weight_recorded_at ON weight_entries (recorded_at
 CREATE TABLE IF NOT EXISTS oauth_clients (
     client_id TEXT PRIMARY KEY,
     info_json TEXT NOT NULL
+);
+
+-- The single live goals row (seeded from env on first run, then editable).
+CREATE TABLE IF NOT EXISTS goals (
+    id                  INTEGER PRIMARY KEY CHECK (id = 1),
+    goal_mode           TEXT    NOT NULL,
+    calorie_target_kcal INTEGER NOT NULL,
+    protein_target_g    INTEGER NOT NULL
 );
 """
 
@@ -151,6 +159,28 @@ class Database:
             "SELECT info_json FROM oauth_clients WHERE client_id = ?", (client_id,)
         ).fetchone()
         return row["info_json"] if row else None
+
+    # --- goals --------------------------------------------------------------
+
+    def get_goals(self) -> Goals | None:
+        row = self._conn.execute(
+            "SELECT goal_mode, calorie_target_kcal, protein_target_g FROM goals WHERE id = 1"
+        ).fetchone()
+        if row is None:
+            return None
+        return Goals(
+            goal_mode=row["goal_mode"],
+            calorie_target_kcal=row["calorie_target_kcal"],
+            protein_target_g=row["protein_target_g"],
+        )
+
+    def save_goals(self, goals: Goals) -> None:
+        self._conn.execute(
+            "INSERT OR REPLACE INTO goals "
+            "(id, goal_mode, calorie_target_kcal, protein_target_g) VALUES (1, ?, ?, ?)",
+            (goals.goal_mode, goals.calorie_target_kcal, goals.protein_target_g),
+        )
+        self._conn.commit()
 
     def day_totals(self, day: date) -> DayTotals:
         prefix = day.isoformat()  # eaten_at starts with YYYY-MM-DD for that day

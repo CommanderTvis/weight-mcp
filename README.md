@@ -24,16 +24,19 @@ Single-user, self-hosted, by design. See [SPEC.md](./SPEC.md) for the rationale.
 | `record_weight` | Store a body-weight measurement. |
 | `lookup_nutrition` | Query public nutrition databases (Open Food Facts, optional USDA). |
 | `daily_progress` | Today's intake vs. your goal. |
+| `set_goals` | Change the daily calorie/protein targets and floor/ceiling mode. |
 | `show_dashboard` | Render the interactive dashboard (weight graph + recent meals). |
 
 ## Configure
 
 Copy `.env.example` to `.env` and set at least `WEIGHT_MCP_PASSWORD` and
 `WEIGHT_MCP_PUBLIC_BASE_URL`. Nutrition sources default to **Open Food Facts,
-filtered to Germany**; set `WEIGHT_MCP_*` to change region, goals, or enable USDA.
+filtered to Germany**; set `WEIGHT_MCP_*` to change region or enable USDA.
 
-Goals support two modes: `floor` (eat *at least* the target — the default, for
-under-eaters) and `ceiling` (stay under — for weight loss).
+Goals are not env config — set them from chat with `set_goals` (they persist in
+the database). Two modes: `floor` (eat *at least* the target — the default, for
+under-eaters) and `ceiling` (stay under — for weight loss). Until you set your
+own, the default is 2600 kcal / 150 g protein, floor.
 
 ## Run
 

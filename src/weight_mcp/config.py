@@ -39,13 +39,6 @@ class Settings(BaseSettings):
     # --- storage ------------------------------------------------------------
     database_path: Path = Path("data/weight.sqlite3")
 
-    # --- goals --------------------------------------------------------------
-    # The author is an under-eater: the default goal is a *floor* (eat at least
-    # this much). Set goal_mode="ceiling" for weight-loss / deficit framing.
-    goal_mode: GoalMode = "floor"
-    calorie_target_kcal: int = 2600
-    protein_target_g: int = 150
-
     # --- locale -------------------------------------------------------------
     # Default region/language for nutrition lookups: a user in Germany.
     region: str = "DE"

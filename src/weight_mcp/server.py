@@ -1,8 +1,9 @@
 """Assembles the MCP server, the OAuth gate, and the dashboard into one ASGI app.
 
-claude.ai connects to ``/mcp`` (Streamable HTTP). The MCP SDK mounts the OAuth
-metadata, ``/authorize``, ``/token``, ``/register`` and the 401/``WWW-Authenticate``
-handling for us; we add the password form at ``/login`` and the dashboard UI.
+claude.ai connects to ``/`` (Streamable HTTP at the origin root). The MCP SDK
+mounts the OAuth metadata, ``/authorize``, ``/token``, ``/register`` and the
+401/``WWW-Authenticate`` handling for us; we add the password form at ``/login``
+and the dashboard UI.
 """
 
 from collections.abc import AsyncIterator
@@ -17,9 +18,9 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from .config import Settings
+from .config import GoalMode, Settings
 from .db import Database
-from .models import NutritionFacts, Progress
+from .models import DEFAULT_GOALS, Goals, NutritionFacts, Progress
 from .nutrition import NutritionLookup
 from .oauth import SCOPE, PasswordOAuthProvider
 from .ui import render_dashboard
@@ -95,13 +96,14 @@ def create_app(settings: Settings) -> Starlette:
     def current_progress() -> Progress:
         today = date.today()
         totals = db.day_totals(today)
+        goals = db.get_goals() or DEFAULT_GOALS
         return Progress(
             day=today,
-            goal_mode=settings.goal_mode,
+            goal_mode=goals.goal_mode,
             kcal=totals.kcal,
-            kcal_target=settings.calorie_target_kcal,
+            kcal_target=goals.calorie_target_kcal,
             protein_g=totals.protein_g,
-            protein_target_g=settings.protein_target_g,
+            protein_target_g=goals.protein_target_g,
         )
 
     def dashboard_html() -> str:
@@ -115,12 +117,13 @@ def create_app(settings: Settings) -> Starlette:
 
     @mcp.prompt(title="Calorie & protein counter")
     def counter() -> str:
+        goals = db.get_goals() or DEFAULT_GOALS
         goal_desc = (
-            f"to eat AT LEAST {settings.calorie_target_kcal} kcal and "
-            f"{settings.protein_target_g} g protein per day"
-            if settings.goal_mode == "floor"
-            else f"to stay UNDER {settings.calorie_target_kcal} kcal per day while "
-            f"getting at least {settings.protein_target_g} g protein"
+            f"to eat AT LEAST {goals.calorie_target_kcal} kcal and "
+            f"{goals.protein_target_g} g protein per day"
+            if goals.goal_mode == "floor"
+            else f"to stay UNDER {goals.calorie_target_kcal} kcal per day while "
+            f"getting at least {goals.protein_target_g} g protein"
         )
         return PROMPT_TEXT.format(goal_desc=goal_desc)
 
@@ -172,6 +175,29 @@ def create_app(settings: Settings) -> Starlette:
     def daily_progress() -> Progress:
         """Today's calorie and protein intake against the configured goal."""
         return current_progress()
+
+    @mcp.tool(title="Set goals")
+    def set_goals(
+        calorie_target_kcal: int | None = None,
+        protein_target_g: int | None = None,
+        goal_mode: GoalMode | None = None,
+    ) -> Goals:
+        """Update the daily targets. Only the arguments you pass are changed;
+        goal_mode is "floor" (eat at least) or "ceiling" (stay under)."""
+        current = db.get_goals() or DEFAULT_GOALS
+        goals = current.model_copy(
+            update={
+                k: v
+                for k, v in {
+                    "calorie_target_kcal": calorie_target_kcal,
+                    "protein_target_g": protein_target_g,
+                    "goal_mode": goal_mode,
+                }.items()
+                if v is not None
+            }
+        )
+        db.save_goals(goals)
+        return goals
 
     @mcp.tool(title="Show dashboard", meta={"ui": {"resourceUri": DASHBOARD_URI}})
     def show_dashboard() -> EmbeddedResource:

@@ -4,6 +4,20 @@ from datetime import date, datetime
 
 from pydantic import BaseModel
 
+from .config import GoalMode
+
+
+class Goals(BaseModel):
+    """The live intake targets, stored in the DB and editable at runtime."""
+
+    goal_mode: GoalMode
+    calorie_target_kcal: int
+    protein_target_g: int
+
+
+# Used until the user sets their own. "floor" = eat at least this (under-eater).
+DEFAULT_GOALS = Goals(goal_mode="floor", calorie_target_kcal=2600, protein_target_g=150)
+
 
 class WeightEntry(BaseModel):
     id: int

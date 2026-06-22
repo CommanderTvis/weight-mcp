@@ -1,6 +1,7 @@
 from datetime import date, datetime
 
 from weight_mcp.db import Database
+from weight_mcp.models import Goals
 
 
 def test_weight_series_is_chronological(db: Database) -> None:
@@ -24,6 +25,19 @@ def test_empty_day_totals_are_zero(db: Database) -> None:
     totals = db.day_totals(date(2026, 1, 1))
     assert totals.kcal == 0
     assert totals.item_count == 0
+
+
+def test_goals_roundtrip(db: Database) -> None:
+    assert db.get_goals() is None  # unset until the user sets them
+    db.save_goals(Goals(goal_mode="floor", calorie_target_kcal=2000, protein_target_g=107))
+    stored = db.get_goals()
+    assert stored is not None
+    assert stored.protein_target_g == 107
+    db.save_goals(Goals(goal_mode="ceiling", calorie_target_kcal=1800, protein_target_g=120))
+    updated = db.get_goals()
+    assert updated is not None
+    assert updated.goal_mode == "ceiling"
+    assert updated.calorie_target_kcal == 1800
 
 
 def test_oauth_client_roundtrip(db: Database) -> None:
