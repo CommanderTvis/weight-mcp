@@ -7,7 +7,7 @@ from pydantic import AnyUrl
 from weight_mcp.db import Database
 from weight_mcp.oauth import SCOPE, PasswordOAuthProvider
 
-RESOURCE = "https://weight.example.com/mcp"
+RESOURCE = "https://weight.example.com/"
 
 
 def make_provider(db: Database, password: str = "secret") -> PasswordOAuthProvider:

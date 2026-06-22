@@ -19,7 +19,7 @@ from weight_mcp.server import create_app
 
 REDIRECT = "https://claude.ai/api/mcp/auth_callback"
 PASSWORD = "secret"  # matches the `settings` fixture in conftest
-RESOURCE = "https://weight.example.com/mcp"  # public_base_url from the fixture + /mcp
+RESOURCE = "https://weight.example.com/"  # MCP is served at the origin root
 
 
 def _pkce() -> tuple[str, str]:
@@ -84,11 +84,11 @@ def test_metadata_and_challenge(client: TestClient, settings: Settings) -> None:
     assert asm.status_code == 200
     assert "S256" in asm.json()["code_challenge_methods_supported"]
 
-    prm = client.get("/.well-known/oauth-protected-resource/mcp")
+    prm = client.get("/.well-known/oauth-protected-resource")
     assert prm.status_code == 200
-    assert prm.json()["resource"] == f"{settings.issuer}/mcp"
+    assert prm.json()["resource"] == f"{settings.issuer}/"
 
-    unauth = client.get("/mcp")
+    unauth = client.get("/")
     assert unauth.status_code == 401
     assert "resource_metadata=" in unauth.headers["www-authenticate"]
 
@@ -129,7 +129,7 @@ def test_full_flow_password_gate_and_authenticated_call(client: TestClient) -> N
 
     # The access token authenticates an MCP request.
     authed = client.post(
-        "/mcp",
+        "/",
         headers={
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json, text/event-stream",
@@ -164,7 +164,7 @@ def test_tampered_txn_rejected(client: TestClient) -> None:
 
 def test_garbage_token_is_rejected(client: TestClient) -> None:
     resp = client.post(
-        "/mcp",
+        "/",
         headers={
             "Authorization": "Bearer garbage",
             "Accept": "application/json, text/event-stream",

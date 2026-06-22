@@ -57,8 +57,9 @@ behind a TLS reverse proxy, and set `WEIGHT_MCP_PUBLIC_BASE_URL` to that origin.
 
 ## Add to claude.ai
 
-Settings → Connectors → add a custom connector, paste your server's MCP URL
-(`https://<your-host>/mcp`). claude.ai opens the OAuth page; enter your password.
+Settings → Connectors → add a custom connector, paste your server's base URL
+(`https://<your-host>` — the MCP endpoint and OAuth live at the origin root, so
+there is no path to append). claude.ai opens the OAuth page; enter your password.
 Done — start a chat and tell Claude what you ate.
 
 ## Develop

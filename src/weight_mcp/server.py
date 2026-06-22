@@ -51,10 +51,14 @@ hit it today."""
 def create_app(settings: Settings) -> Starlette:
     db = Database(settings.database_path)
     nutrition = NutritionLookup(settings)
-    mcp_url = f"{settings.issuer}/mcp"
+    # MCP is served at the origin root so the bare URL the user pastes into
+    # claude.ai *is* the MCP endpoint, on the same origin as the OAuth routes.
+    # Normalize through AnyHttpUrl so the token audience matches the trailing
+    # slash the protected-resource metadata advertises for a root resource.
+    resource_url = str(AnyHttpUrl(settings.issuer))
     provider = PasswordOAuthProvider(
         password=settings.password,
-        resource_url=mcp_url,
+        resource_url=resource_url,
         login_path=LOGIN_PATH,
         db=db,
     )
@@ -73,10 +77,11 @@ def create_app(settings: Settings) -> Starlette:
         "and view a dashboard — all in chat.",
         host=settings.host,
         port=settings.port,
+        streamable_http_path="/",
         auth_server_provider=provider,
         auth=AuthSettings(
             issuer_url=AnyHttpUrl(settings.issuer),
-            resource_server_url=AnyHttpUrl(mcp_url),
+            resource_server_url=AnyHttpUrl(resource_url),
             client_registration_options=ClientRegistrationOptions(
                 enabled=True,
                 valid_scopes=[SCOPE],
