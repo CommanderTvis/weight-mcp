@@ -12,7 +12,7 @@ from datetime import date
 
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.server.fastmcp import FastMCP
-from mcp.types import EmbeddedResource, TextResourceContents
+from mcp.types import EmbeddedResource, TextResourceContents, ToolAnnotations
 from pydantic import AnyHttpUrl, AnyUrl
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -74,8 +74,14 @@ def create_app(settings: Settings) -> Starlette:
 
     mcp = FastMCP(
         "weight-mcp",
-        instructions="Personal calorie & protein counter. Log meals, track weight, "
-        "and view a dashboard — all in chat.",
+        instructions=(
+            "Personal calorie & protein counter for one user. When the user opens "
+            "or starts weight-mcp, greets you, or asks how they're doing, call "
+            "`show_dashboard` first so they immediately see their weight graph, "
+            "recent meals, and today's progress. Then help them log meals "
+            "(`log_food`, `lookup_nutrition`), record weight (`record_weight`), "
+            "and adjust targets (`set_goals`)."
+        ),
         host=settings.host,
         port=settings.port,
         streamable_http_path="/",
@@ -171,7 +177,10 @@ def create_app(settings: Settings) -> Starlette:
             return [hit] if hit else []
         return await nutrition.search(query)
 
-    @mcp.tool(title="Daily progress")
+    @mcp.tool(
+        title="Daily progress",
+        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False),
+    )
     def daily_progress() -> Progress:
         """Today's calorie and protein intake against the configured goal."""
         return current_progress()
@@ -199,9 +208,22 @@ def create_app(settings: Settings) -> Starlette:
         db.save_goals(goals)
         return goals
 
-    @mcp.tool(title="Show dashboard", meta={"ui": {"resourceUri": DASHBOARD_URI}})
+    @mcp.tool(
+        title="Open weight-mcp dashboard",
+        meta={"ui": {"resourceUri": DASHBOARD_URI}},
+        annotations=ToolAnnotations(
+            title="Open weight-mcp dashboard",
+            readOnlyHint=True,
+            idempotentHint=True,
+            openWorldHint=False,
+        ),
+    )
     def show_dashboard() -> EmbeddedResource:
-        """Render the interactive dashboard: weight graph and recently eaten."""
+        """Open the weight-mcp dashboard: weight graph, recently eaten, and today's
+        calorie/protein progress. This is the entry point — call it when the user
+        starts or opens weight-mcp (e.g. "start weight mcp", "open weight", "show my
+        dashboard"), at the beginning of a session, or whenever they ask how they're
+        doing. Safe and read-only, so call it proactively without asking first."""
         return EmbeddedResource(
             type="resource",
             resource=TextResourceContents(
