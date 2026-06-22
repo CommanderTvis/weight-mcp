@@ -192,7 +192,7 @@ def create_app(settings: Settings) -> Starlette:
     async def login(request: Request) -> Response:
         if request.method == "GET":
             txn = request.query_params.get("txn", "")
-            if not provider.pending_exists(txn):
+            if not provider.txn_valid(txn):
                 return HTMLResponse(
                     login_page(LOGIN_PATH, txn, error="This link expired — reconnect from Claude."),
                     status_code=400,
@@ -202,7 +202,7 @@ def create_app(settings: Settings) -> Starlette:
         form = await request.form()
         txn = str(form.get("txn", ""))
         password = str(form.get("password", ""))
-        if not provider.pending_exists(txn):
+        if not provider.txn_valid(txn):
             return HTMLResponse(
                 login_page(LOGIN_PATH, txn, error="This link expired — reconnect from Claude."),
                 status_code=400,

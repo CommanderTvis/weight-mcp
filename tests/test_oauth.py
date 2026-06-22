@@ -1,5 +1,11 @@
+import asyncio
+
+from mcp.server.auth.provider import AuthorizationParams
+from mcp.shared.auth import OAuthClientInformationFull
+from pydantic import AnyUrl
+
 from weight_mcp.db import Database
-from weight_mcp.oauth import PasswordOAuthProvider
+from weight_mcp.oauth import SCOPE, PasswordOAuthProvider
 
 RESOURCE = "https://weight.example.com/mcp"
 
@@ -38,7 +44,27 @@ async def test_refresh_token_not_accepted_as_access(db: Database) -> None:
     assert await provider.load_access_token(token.refresh_token) is None
 
 
-def test_pending_and_login_unknown_txn(db: Database) -> None:
+def test_invalid_txn_rejected(db: Database) -> None:
     provider = make_provider(db)
-    assert not provider.pending_exists("nope")
+    assert not provider.txn_valid("nope")
     assert provider.complete_login("nope") is None
+
+
+def test_txn_from_one_password_invalid_after_rotation(db: Database) -> None:
+    # A txn minted under the old password must not validate under a new one.
+    old = make_provider(db, "old")
+    params = AuthorizationParams(
+        state="s",
+        scopes=[SCOPE],
+        code_challenge="abc",
+        redirect_uri=AnyUrl("https://claude.ai/api/mcp/auth_callback"),
+        redirect_uri_provided_explicitly=True,
+        resource=RESOURCE,
+    )
+    client = OAuthClientInformationFull(
+        client_id="c1", redirect_uris=[AnyUrl("https://claude.ai/api/mcp/auth_callback")]
+    )
+    login_url = asyncio.run(old.authorize(client, params))
+    txn = login_url.split("txn=", 1)[1]
+    assert old.txn_valid(txn)
+    assert not make_provider(db, "new").txn_valid(txn)

@@ -140,16 +140,26 @@ def test_full_flow_password_gate_and_authenticated_call(client: TestClient) -> N
     assert authed.status_code != 401
 
 
-def test_login_consumes_transaction_single_use(client: TestClient) -> None:
+def test_login_works_across_instances(client: TestClient, settings: Settings) -> None:
+    # The flow is stateless: a txn minted by one instance must complete on a
+    # *different* one (multiple uvicorn workers, replicas, or a restart mid-flow).
     _, challenge = _pkce()
     client_id = _register(client)
     txn = _authorize_to_txn(client, client_id, challenge)
 
-    first = client.post("/login", data={"txn": txn, "password": PASSWORD})
-    assert first.status_code == 302
-    # The same login link cannot be replayed.
-    replay = client.post("/login", data={"txn": txn, "password": PASSWORD})
-    assert replay.status_code == 400
+    with TestClient(create_app(settings), follow_redirects=False) as other:
+        page = other.get(f"/login?txn={txn}")
+        assert page.status_code == 200
+        assert "expired" not in page.text.lower()
+        done = other.post("/login", data={"txn": txn, "password": PASSWORD})
+        assert done.status_code == 302
+        assert done.headers["location"].startswith(REDIRECT)
+
+
+def test_tampered_txn_rejected(client: TestClient) -> None:
+    bad = client.get("/login?txn=not-a-real-jwt")
+    assert bad.status_code == 400
+    assert "expired" in bad.text.lower()
 
 
 def test_garbage_token_is_rejected(client: TestClient) -> None:
