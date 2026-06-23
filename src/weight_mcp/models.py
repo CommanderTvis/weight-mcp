@@ -26,10 +26,12 @@ class WeightEntry(BaseModel):
 
 
 class FoodLog(BaseModel):
-    """One logged food item. A "meal" is one or more of these eaten together."""
+    """One logged food item, stamped with a per-day meal number for idempotent
+    edits (re-logging the same number overwrites it)."""
 
     id: int
     eaten_at: datetime
+    meal_number: int | None = None
     name: str
     quantity_g: float | None
     kcal: float

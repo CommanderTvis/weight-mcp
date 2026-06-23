@@ -41,7 +41,13 @@ For each food the user reports:
 2. Use `lookup_nutrition` to find calories and protein for it (try a barcode if \
 the user gives one, otherwise search by name). Pick the best match and scale it \
 to the amount eaten.
-3. Call `log_food` with the resulting kcal and protein.
+3. Call `log_food` with the resulting kcal and protein, numbering meals by the \
+order the user reports them: the first food is meal 1, the next is 2, and so on.
+
+If the user corrects a meal — or edits an earlier message so a food changes — \
+re-log it with the SAME meal number to overwrite it (don't add a duplicate); use \
+`delete_food` to remove one. Because an edited message re-runs from that point, \
+keep numbering by conversation order so the corrected food keeps its number.
 
 Use `record_weight` whenever the user reports a weight. Call `daily_progress` to \
 check intake against the goal, and `show_dashboard` to display the weight graph \
@@ -149,13 +155,17 @@ def create_app(settings: Settings) -> Starlette:
         name: str,
         kcal: float,
         protein_g: float,
+        meal_number: int | None = None,
         quantity_g: float | None = None,
         carbs_g: float | None = None,
         fat_g: float | None = None,
     ) -> str:
         """Log one eaten item with its calories and protein (already scaled to the
-        amount eaten)."""
-        db.add_food_log(
+        amount eaten). Number meals by their order in the conversation: the first
+        food reported is meal_number 1, the next 2, and so on — always pass it. To
+        revise a meal (the user corrects it, or edits an earlier message), call this
+        again with that same meal_number to OVERWRITE it instead of duplicating."""
+        entry = db.add_food_log(
             name=name,
             kcal=kcal,
             protein_g=protein_g,
@@ -163,11 +173,23 @@ def create_app(settings: Settings) -> Starlette:
             carbs_g=carbs_g,
             fat_g=fat_g,
             source="manual",
+            meal_number=meal_number,
         )
         p = current_progress()
         return (
-            f"Logged {name}: {kcal:.0f} kcal, {protein_g:.0f} g protein. "
+            f"Meal #{entry.meal_number}: {name} — {kcal:.0f} kcal, {protein_g:.0f} g protein. "
             f"Today: {p.kcal:.0f}/{p.kcal_target} kcal, "
+            f"{p.protein_g:.0f}/{p.protein_target_g} g protein."
+        )
+
+    @mcp.tool(title="Delete meal")
+    def delete_food(meal_number: int) -> str:
+        """Remove one of today's logged meals by its meal_number."""
+        if not db.delete_food_log(meal_number):
+            return f"No meal #{meal_number} logged today."
+        p = current_progress()
+        return (
+            f"Removed meal #{meal_number}. Today: {p.kcal:.0f}/{p.kcal_target} kcal, "
             f"{p.protein_g:.0f}/{p.protein_target_g} g protein."
         )
 

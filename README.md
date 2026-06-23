@@ -20,7 +20,8 @@ Single-user, self-hosted, by design. See [SPEC.md](./SPEC.md) for the rationale.
 
 | Tool | What it does |
 | --- | --- |
-| `log_food` | Record one eaten item (kcal, protein, …). |
+| `log_food` | Record an eaten item (kcal, protein, …), numbered per day; re-logging a meal number overwrites it (edits). |
+| `delete_food` | Remove one of today's meals by its number. |
 | `record_weight` | Store a body-weight measurement. |
 | `lookup_nutrition` | Query public nutrition databases (Open Food Facts, optional USDA). |
 | `daily_progress` | Today's intake vs. your goal. |

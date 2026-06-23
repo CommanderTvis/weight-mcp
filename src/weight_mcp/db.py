@@ -9,46 +9,8 @@ import sqlite3
 from datetime import date, datetime
 from pathlib import Path
 
+from .migrations import migrate
 from .models import DayTotals, FoodLog, Goals, WeightEntry
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS weight_entries (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    recorded_at TEXT    NOT NULL,
-    weight_kg   REAL    NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS food_logs (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    eaten_at   TEXT    NOT NULL,
-    name       TEXT    NOT NULL,
-    quantity_g REAL,
-    kcal       REAL    NOT NULL,
-    protein_g  REAL    NOT NULL,
-    carbs_g    REAL,
-    fat_g      REAL,
-    source     TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_food_logs_eaten_at ON food_logs (eaten_at);
-CREATE INDEX IF NOT EXISTS idx_weight_recorded_at ON weight_entries (recorded_at);
-
--- OAuth Dynamic Client Registration records. Persisted so claude.ai's stored
--- registration keeps working across server restarts. (Tokens are stateless
--- JWTs and auth codes are ephemeral, so neither needs a table.)
-CREATE TABLE IF NOT EXISTS oauth_clients (
-    client_id TEXT PRIMARY KEY,
-    info_json TEXT NOT NULL
-);
-
--- The single live goals row (seeded from env on first run, then editable).
-CREATE TABLE IF NOT EXISTS goals (
-    id                  INTEGER PRIMARY KEY CHECK (id = 1),
-    goal_mode           TEXT    NOT NULL,
-    calorie_target_kcal INTEGER NOT NULL,
-    protein_target_g    INTEGER NOT NULL
-);
-"""
 
 
 class Database:
@@ -56,8 +18,7 @@ class Database:
         path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._conn.executescript(_SCHEMA)
-        self._conn.commit()
+        migrate(self._conn)
 
     def close(self) -> None:
         self._conn.close()
@@ -103,47 +64,80 @@ class Database:
         fat_g: float | None = None,
         source: str | None = None,
         eaten_at: datetime | None = None,
+        meal_number: int | None = None,
     ) -> FoodLog:
+        """Log a food item. Pass ``meal_number`` to overwrite that meal of the day
+        (idempotent edit); omit it to append as the next meal of the day."""
         when = eaten_at or datetime.now()
-        cur = self._conn.execute(
+        day = when.date().isoformat()
+        if meal_number is None:
+            row = self._conn.execute(
+                "SELECT COALESCE(MAX(meal_number), 0) AS m FROM food_logs WHERE eaten_day = ?",
+                (day,),
+            ).fetchone()
+            meal_number = int(row["m"]) + 1
+        self._conn.execute(
             "INSERT INTO food_logs "
-            "(eaten_at, name, quantity_g, kcal, protein_g, carbs_g, fat_g, source) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (when.isoformat(), name, quantity_g, kcal, protein_g, carbs_g, fat_g, source),
+            "(eaten_at, eaten_day, meal_number, name, quantity_g, kcal, protein_g, carbs_g, "
+            "fat_g, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(eaten_day, meal_number) DO UPDATE SET "
+            "eaten_at = excluded.eaten_at, name = excluded.name, quantity_g = excluded.quantity_g, "
+            "kcal = excluded.kcal, protein_g = excluded.protein_g, carbs_g = excluded.carbs_g, "
+            "fat_g = excluded.fat_g, source = excluded.source",
+            (
+                when.isoformat(),
+                day,
+                meal_number,
+                name,
+                quantity_g,
+                kcal,
+                protein_g,
+                carbs_g,
+                fat_g,
+                source,
+            ),
         )
         self._conn.commit()
+        return self._food_log(day, meal_number)
+
+    def delete_food_log(self, meal_number: int, *, day: date | None = None) -> bool:
+        """Remove a meal by its number (today by default). Returns whether a row went."""
+        cur = self._conn.execute(
+            "DELETE FROM food_logs WHERE eaten_day = ? AND meal_number = ?",
+            ((day or date.today()).isoformat(), meal_number),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def _food_log(self, day: str, meal_number: int) -> FoodLog:
+        row = self._conn.execute(
+            "SELECT id, eaten_at, meal_number, name, quantity_g, kcal, protein_g, carbs_g, "
+            "fat_g, source FROM food_logs WHERE eaten_day = ? AND meal_number = ?",
+            (day, meal_number),
+        ).fetchone()
+        return self._to_food_log(row)
+
+    def _to_food_log(self, r: sqlite3.Row) -> FoodLog:
         return FoodLog(
-            id=int(cur.lastrowid or 0),
-            eaten_at=when,
-            name=name,
-            quantity_g=quantity_g,
-            kcal=kcal,
-            protein_g=protein_g,
-            carbs_g=carbs_g,
-            fat_g=fat_g,
-            source=source,
+            id=r["id"],
+            eaten_at=datetime.fromisoformat(r["eaten_at"]),
+            meal_number=r["meal_number"],
+            name=r["name"],
+            quantity_g=r["quantity_g"],
+            kcal=r["kcal"],
+            protein_g=r["protein_g"],
+            carbs_g=r["carbs_g"],
+            fat_g=r["fat_g"],
+            source=r["source"],
         )
 
     def recent_food_logs(self, limit: int = 20) -> list[FoodLog]:
         rows = self._conn.execute(
-            "SELECT id, eaten_at, name, quantity_g, kcal, protein_g, carbs_g, fat_g, source "
-            "FROM food_logs ORDER BY eaten_at DESC LIMIT ?",
+            "SELECT id, eaten_at, meal_number, name, quantity_g, kcal, protein_g, carbs_g, "
+            "fat_g, source FROM food_logs ORDER BY eaten_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
-        return [
-            FoodLog(
-                id=r["id"],
-                eaten_at=datetime.fromisoformat(r["eaten_at"]),
-                name=r["name"],
-                quantity_g=r["quantity_g"],
-                kcal=r["kcal"],
-                protein_g=r["protein_g"],
-                carbs_g=r["carbs_g"],
-                fat_g=r["fat_g"],
-                source=r["source"],
-            )
-            for r in rows
-        ]
+        return [self._to_food_log(r) for r in rows]
 
     # --- oauth clients ------------------------------------------------------
 

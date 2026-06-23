@@ -101,8 +101,9 @@ def _meals_html(logs: list[FoodLog]) -> str:
     for log in logs:
         when = log.eaten_at.strftime("%a %H:%M")
         qty = f"{log.quantity_g:.0f} g · " if log.quantity_g else ""
+        num = f"#{log.meal_number} " if log.meal_number is not None else ""
         items.append(
-            f'<li><span class="meal-name">{escape(log.name)}</span>'
+            f'<li><span class="meal-name">{num}{escape(log.name)}</span>'
             f'<span class="meal-meta">{qty}{log.kcal:.0f} kcal · '
             f"{log.protein_g:.0f} g protein · {when}</span></li>"
         )
