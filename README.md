@@ -25,7 +25,7 @@ Single-user, self-hosted, by design. See [SPEC.md](./SPEC.md) for the rationale.
 | `lookup_nutrition` | Query public nutrition databases (Open Food Facts, optional USDA). |
 | `daily_progress` | Today's intake vs. your goal. |
 | `set_goals` | Change the daily calorie/protein targets and floor/ceiling mode. |
-| `show_dashboard` | Returns a link to your dashboard (weight graph + recent meals + today's progress) and renders it inline where the client supports MCP Apps UI. |
+| `show_dashboard` | Renders the dashboard inline as an MCP Apps panel (weight graph + recent meals + today's progress). |
 
 ## Configure
 

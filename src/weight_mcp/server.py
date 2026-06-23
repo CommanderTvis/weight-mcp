@@ -235,13 +235,11 @@ def create_app(settings: Settings) -> Starlette:
         dashboard"), at the beginning of a session, or whenever they ask how they're
         doing. Safe and read-only, so call it proactively without asking first.
 
-        Returns a link to the dashboard; ALWAYS show the user that link verbatim so
-        they can open it, since the inline panel may not render in every client. The
-        page asks for the password once, then remembers the browser."""
+        The dashboard renders inline as an interactive panel — do NOT print a link
+        or repeat its contents in text. The short text returned here is only a
+        fallback summary for clients that can't render the panel."""
         p = current_progress()
-        link = f"{settings.issuer}{DASHBOARD_PATH}"
         return (
-            f"Open your dashboard: {link}\n\n"
             f"Today: {p.kcal:.0f}/{p.kcal_target} kcal, "
             f"{p.protein_g:.0f}/{p.protein_target_g} g protein."
         )
