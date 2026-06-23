@@ -23,7 +23,7 @@ from .db import Database
 from .models import DEFAULT_GOALS, Goals, NutritionFacts, Progress
 from .nutrition import NutritionLookup
 from .oauth import DASHBOARD_COOKIE_TTL, SCOPE, PasswordOAuthProvider
-from .ui import render_dashboard
+from .ui import APP_BRIDGE_ORIGIN, render_dashboard
 from .web import login_page
 
 DASHBOARD_URI = "ui://weight-mcp/dashboard"
@@ -114,11 +114,12 @@ def create_app(settings: Settings) -> Starlette:
             protein_target_g=goals.protein_target_g,
         )
 
-    def dashboard_html() -> str:
+    def dashboard_html(*, embed_app_bridge: bool = False) -> str:
         return render_dashboard(
             db.weight_series(limit=180),
             db.recent_food_logs(limit=20),
             current_progress(),
+            embed_app_bridge=embed_app_bridge,
         )
 
     # --- prompt -------------------------------------------------------------
@@ -246,10 +247,16 @@ def create_app(settings: Settings) -> Starlette:
         )
 
     # --- UI resource (host fetches it via the tool's _meta.ui.resourceUri) --
+    # csp.resourceDomains must allow the app-bridge CDN, or the host's CSP blocks
+    # the script and the iframe never connects/resizes.
 
-    @mcp.resource(DASHBOARD_URI, mime_type=UI_MIME)
+    @mcp.resource(
+        DASHBOARD_URI,
+        mime_type=UI_MIME,
+        meta={"ui": {"csp": {"resourceDomains": [APP_BRIDGE_ORIGIN]}}},
+    )
     def dashboard_resource() -> str:
-        return dashboard_html()
+        return dashboard_html(embed_app_bridge=True)
 
     # --- OAuth password form ------------------------------------------------
 

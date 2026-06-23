@@ -1,8 +1,9 @@
 """Dashboard HTML for the MCP Apps UI resource.
 
-The MCP Apps iframe is sandboxed with a strict CSP, so this renders entirely
-self-contained: data is injected server-side and the weight graph is hand-drawn
-inline SVG. No external scripts, styles, or fonts.
+Data is injected server-side and the weight graph is hand-drawn inline SVG — no
+external styles or fonts. When embedded as an MCP Apps resource, the only added
+dependency is the app-bridge script (so the host completes the handshake and
+sizes the iframe); the plain web page omits even that.
 """
 
 from html import escape
@@ -108,9 +109,34 @@ def _meals_html(logs: list[FoodLog]) -> str:
     return f'<ul class="meals">{"".join(items)}</ul>'
 
 
-def render_dashboard(weights: list[WeightEntry], logs: list[FoodLog], progress: Progress) -> str:
+# The MCP Apps bridge: connecting completes the ui/initialize handshake and turns
+# on the ResizeObserver that reports content height to the host — without it the
+# host renders the iframe at zero height (it "blinks" then vanishes). Loaded from
+# the self-contained build so no bundler/import-map is needed; the resource's
+# _meta.ui.csp must allow this origin. Harmless when opened as a plain web page
+# (connect() just never resolves; the server-rendered content is already visible).
+APP_BRIDGE_ORIGIN = "https://unpkg.com"
+_APP_BRIDGE_URL = (
+    f"{APP_BRIDGE_ORIGIN}/@modelcontextprotocol/ext-apps@1.7.4/dist/src/app-with-deps.js"
+)
+_APP_BRIDGE = f"""
+<script type="module">
+  import {{ App }} from "{_APP_BRIDGE_URL}";
+  try {{ await new App({{ name: "weight-mcp dashboard", version: "1.0.0" }}).connect(); }}
+  catch (err) {{ /* not inside an MCP host — content is already rendered */ }}
+</script>"""
+
+
+def render_dashboard(
+    weights: list[WeightEntry],
+    logs: list[FoodLog],
+    progress: Progress,
+    *,
+    embed_app_bridge: bool = False,
+) -> str:
     goal_word = "min" if progress.goal_mode == "floor" else "max"
     above = progress.goal_mode == "floor"
+    bridge = _APP_BRIDGE if embed_app_bridge else ""
     kcal_card = _card(
         progress.kcal, progress.kcal_target, "kcal", progress.kcal_remaining, goal_word, above=above
     )
@@ -133,4 +159,5 @@ def render_dashboard(weights: list[WeightEntry], logs: list[FoodLog], progress: 
 {_weight_svg(weights)}
 <h2>Recently eaten</h2>
 {_meals_html(logs)}
+{bridge}
 </body></html>"""

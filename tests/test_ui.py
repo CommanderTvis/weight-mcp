@@ -44,3 +44,12 @@ def test_render_handles_no_data() -> None:
     html = render_dashboard([], [], _progress())
     assert "Not enough weight entries" in html
     assert "Nothing logged yet" in html
+
+
+def test_app_bridge_is_opt_in() -> None:
+    # The MCP Apps bridge (connect() + auto-resize) is only embedded on request,
+    # so the plain web page doesn't pull in the CDN script.
+    assert "app-with-deps.js" not in render_dashboard([], [], _progress())
+    embedded = render_dashboard([], [], _progress(), embed_app_bridge=True)
+    assert "app-with-deps.js" in embedded
+    assert ".connect()" in embedded
