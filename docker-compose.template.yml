@@ -5,7 +5,7 @@
 # a real certificate. WEIGHT_MCP_PUBLIC_BASE_URL must equal that public origin.
 services:
   weight-mcp:
-    image: ghcr.io/OWNER/weight-mcp:latest # <-- set to your published image
+    image: ghcr.io/commandertvis/weight-mcp:latest
     restart: unless-stopped
     env_file: .env
     expose:

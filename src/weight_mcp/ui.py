@@ -10,11 +10,16 @@ from html import escape
 
 from .models import FoodLog, Progress, WeightEntry
 
+# The MCP Apps resource URI for the dashboard. Lives here (next to the rendered
+# HTML) because the in-page Refresh button reads the resource back through it;
+# server.py imports it for the tool/resource wiring so there's one source.
+DASHBOARD_URI = "ui://weight-mcp/dashboard"
+
 _CSS = """
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
 body {
-  margin: 0; padding: 20px;
+  margin: 0; padding: 20px; position: relative;
   font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
   background: #0f1115; color: #e6e8eb;
 }
@@ -39,6 +44,11 @@ ul.meals li:last-child { border-bottom: 0; }
 .meal-name { color: #e6e8eb; }
 .meal-meta { color: #9aa3ad; font-size: 13px; white-space: nowrap; }
 .empty { color: #6b7280; font-style: italic; }
+.refresh { position: absolute; top: 16px; right: 16px;
+  padding: 6px 12px; border: 1px solid #2d323b; border-radius: 8px;
+  background: #181b21; color: #e6e8eb; font: inherit; font-size: 13px; cursor: pointer; }
+.refresh:hover { background: #20242b; }
+.refresh:disabled { opacity: .5; cursor: default; }
 """
 
 
@@ -123,8 +133,39 @@ _APP_BRIDGE_URL = (
 _APP_BRIDGE = f"""
 <script type="module">
   import {{ App }} from "{_APP_BRIDGE_URL}";
-  try {{ await new App({{ name: "weight-mcp dashboard", version: "1.0.0" }}).connect(); }}
+  try {{
+    const app = new App({{ name: "weight-mcp dashboard", version: "1.0.0" }});
+    await app.connect();
+    window.__wmApp = app;  // the Refresh button reads the resource back through it
+  }}
   catch (err) {{ /* not inside an MCP host — content is already rendered */ }}
+</script>"""
+
+
+# Re-render in place on click. Inside an MCP host we ask the bridge to read the
+# dashboard resource again (no tool round-trip, no chat noise); on the plain web
+# page we just re-fetch this URL. Either way we swap only #board, leaving the
+# button (and the connected bridge) untouched.
+_REFRESH = f"""
+<script>
+  document.querySelector(".refresh").addEventListener("click", async (e) => {{
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {{
+      let html;
+      if (window.__wmApp) {{
+        const res = await window.__wmApp.readServerResource({{ uri: "{DASHBOARD_URI}" }});
+        html = res.contents && res.contents[0] && res.contents[0].text;
+      }} else {{
+        html = await (await fetch(location.href, {{ credentials: "same-origin" }})).text();
+      }}
+      if (html) {{
+        const next = new DOMParser().parseFromString(html, "text/html").getElementById("board");
+        if (next) document.getElementById("board").replaceWith(next);
+      }}
+    }} catch (err) {{ /* leave the current view in place */ }}
+    finally {{ btn.disabled = false; }}
+  }});
 </script>"""
 
 
@@ -154,11 +195,15 @@ def render_dashboard(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>weight-mcp dashboard</title><style>{_CSS}</style></head>
 <body>
+<button class="refresh" type="button" aria-label="Refresh dashboard">↻ Refresh</button>
+<main id="board">
 <h1>Today — {progress.day.isoformat()}</h1>
 <div class="cards">{kcal_card}{protein_card}</div>
 <h2>Weight</h2>
 {_weight_svg(weights)}
 <h2>Recently eaten</h2>
 {_meals_html(logs)}
+</main>
+{_REFRESH}
 {bridge}
 </body></html>"""
