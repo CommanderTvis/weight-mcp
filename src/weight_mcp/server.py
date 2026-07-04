@@ -8,7 +8,7 @@ and the dashboard UI.
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime
 
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from mcp.server.fastmcp import FastMCP
@@ -23,10 +23,9 @@ from .db import Database
 from .models import DEFAULT_GOALS, Goals, NutritionFacts, Progress
 from .nutrition import NutritionLookup
 from .oauth import DASHBOARD_COOKIE_TTL, SCOPE, PasswordOAuthProvider
-from .ui import APP_BRIDGE_ORIGIN, render_dashboard
+from .ui import APP_BRIDGE_ORIGIN, DASHBOARD_URI, render_dashboard
 from .web import login_page
 
-DASHBOARD_URI = "ui://weight-mcp/dashboard"
 UI_MIME = "text/html;profile=mcp-app"
 LOGIN_PATH = "/login"
 DASHBOARD_PATH = "/dashboard"
@@ -48,6 +47,10 @@ If the user corrects a meal — or edits an earlier message so a food changes �
 re-log it with the SAME meal number to overwrite it (don't add a duplicate); use \
 `delete_food` to remove one. Because an edited message re-runs from that point, \
 keep numbering by conversation order so the corrected food keeps its number.
+
+If the user reports food eaten on a past day ("yesterday I had..."), pass that \
+day as `day` (YYYY-MM-DD) to `log_food` (and to `delete_food` when removing); \
+meal numbers count per day, so continue from that day's own meals.
 
 Use `record_weight` whenever the user reports a weight. Call `daily_progress` to \
 check intake against the goal, and `show_dashboard` to display the weight graph \
@@ -107,12 +110,12 @@ def create_app(settings: Settings) -> Starlette:
         lifespan=lifespan,
     )
 
-    def current_progress() -> Progress:
-        today = date.today()
-        totals = db.day_totals(today)
+    def current_progress(day: date | None = None) -> Progress:
+        day = day or date.today()
+        totals = db.day_totals(day)
         goals = db.get_goals() or DEFAULT_GOALS
         return Progress(
-            day=today,
+            day=day,
             goal_mode=goals.goal_mode,
             kcal=totals.kcal,
             kcal_target=goals.calorie_target_kcal,
@@ -159,12 +162,18 @@ def create_app(settings: Settings) -> Starlette:
         quantity_g: float | None = None,
         carbs_g: float | None = None,
         fat_g: float | None = None,
+        day: date | None = None,
     ) -> str:
         """Log one eaten item with its calories and protein (already scaled to the
         amount eaten). Number meals by their order in the conversation: the first
         food reported is meal_number 1, the next 2, and so on — always pass it. To
         revise a meal (the user corrects it, or edits an earlier message), call this
-        again with that same meal_number to OVERWRITE it instead of duplicating."""
+        again with that same meal_number to OVERWRITE it instead of duplicating.
+        Pass `day` (YYYY-MM-DD) to log for a past day, e.g. yesterday; meal numbers
+        count per day, so start from that day's existing meals."""
+        eaten_at = None
+        if day is not None and day != date.today():
+            eaten_at = datetime.combine(day, datetime.now().time())
         entry = db.add_food_log(
             name=name,
             kcal=kcal,
@@ -173,23 +182,27 @@ def create_app(settings: Settings) -> Starlette:
             carbs_g=carbs_g,
             fat_g=fat_g,
             source="manual",
+            eaten_at=eaten_at,
             meal_number=meal_number,
         )
-        p = current_progress()
+        p = current_progress(day)
+        label = "Today" if p.day == date.today() else f"{p.day:%Y-%m-%d}"
         return (
             f"Meal #{entry.meal_number}: {name} — {kcal:.0f} kcal, {protein_g:.0f} g protein. "
-            f"Today: {p.kcal:.0f}/{p.kcal_target} kcal, "
+            f"{label}: {p.kcal:.0f}/{p.kcal_target} kcal, "
             f"{p.protein_g:.0f}/{p.protein_target_g} g protein."
         )
 
     @mcp.tool(title="Delete meal")
-    def delete_food(meal_number: int) -> str:
-        """Remove one of today's logged meals by its meal_number."""
-        if not db.delete_food_log(meal_number):
-            return f"No meal #{meal_number} logged today."
-        p = current_progress()
+    def delete_food(meal_number: int, day: date | None = None) -> str:
+        """Remove a logged meal by its meal_number. Defaults to today; pass `day`
+        (YYYY-MM-DD) to delete from a past day."""
+        if not db.delete_food_log(meal_number, day=day):
+            return f"No meal #{meal_number} logged on {(day or date.today()):%Y-%m-%d}."
+        p = current_progress(day)
+        label = "Today" if p.day == date.today() else f"{p.day:%Y-%m-%d}"
         return (
-            f"Removed meal #{meal_number}. Today: {p.kcal:.0f}/{p.kcal_target} kcal, "
+            f"Removed meal #{meal_number}. {label}: {p.kcal:.0f}/{p.kcal_target} kcal, "
             f"{p.protein_g:.0f}/{p.protein_target_g} g protein."
         )
 
