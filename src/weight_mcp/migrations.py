@@ -62,7 +62,39 @@ def _002_meal_numbers(conn: sqlite3.Connection) -> None:
     )
 
 
-MIGRATIONS = [_001_baseline, _002_meal_numbers]
+def _003_backfill_meal_numbers(conn: sqlite3.Connection) -> None:
+    """Give a meal_number to rows that predate numbering (left NULL by _002).
+    A NULL-numbered row still counts toward the day's totals but can't be
+    targeted by ``delete_food``/``log_food``, which match on the number — so it
+    can never be removed or edited. Assign each such row the next free number
+    for its day, oldest first, matching how new logs are numbered."""
+    days = [
+        row["eaten_day"]
+        for row in conn.execute(
+            "SELECT DISTINCT eaten_day FROM food_logs WHERE meal_number IS NULL"
+        )
+    ]
+    for day in days:
+        nxt = (
+            conn.execute(
+                "SELECT COALESCE(MAX(meal_number), 0) AS m FROM food_logs WHERE eaten_day = ?",
+                (day,),
+            ).fetchone()["m"]
+            + 1
+        )
+        rows = conn.execute(
+            "SELECT id FROM food_logs WHERE eaten_day = ? AND meal_number IS NULL "
+            "ORDER BY eaten_at, id",
+            (day,),
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                "UPDATE food_logs SET meal_number = ? WHERE id = ?", (nxt, row["id"])
+            )
+            nxt += 1
+
+
+MIGRATIONS = [_001_baseline, _002_meal_numbers, _003_backfill_meal_numbers]
 
 
 def migrate(conn: sqlite3.Connection) -> None:

@@ -176,8 +176,19 @@ class Database:
         )
         self._conn.commit()
 
+    def day_food_logs(self, day: date) -> list[FoodLog]:
+        """The day's meals in meal-number order, each carrying its number so a
+        caller can pick which one to overwrite or delete."""
+        rows = self._conn.execute(
+            "SELECT id, eaten_at, meal_number, name, quantity_g, kcal, protein_g, carbs_g, "
+            "fat_g, source FROM food_logs WHERE eaten_day = ? ORDER BY meal_number, eaten_at",
+            (day.isoformat(),),
+        ).fetchall()
+        return [self._to_food_log(r) for r in rows]
+
     def day_totals(self, day: date) -> DayTotals:
-        prefix = day.isoformat()  # eaten_at starts with YYYY-MM-DD for that day
+        # eaten_day is the single source of truth for which day a row belongs to
+        # (delete_food and the meal-number index key on it too).
         row = self._conn.execute(
             "SELECT "
             "  COALESCE(SUM(kcal), 0)      AS kcal, "
@@ -185,8 +196,8 @@ class Database:
             "  COALESCE(SUM(carbs_g), 0)   AS carbs_g, "
             "  COALESCE(SUM(fat_g), 0)     AS fat_g, "
             "  COUNT(*)                    AS item_count "
-            "FROM food_logs WHERE eaten_at LIKE ?",
-            (f"{prefix}%",),
+            "FROM food_logs WHERE eaten_day = ?",
+            (day.isoformat(),),
         ).fetchone()
         return DayTotals(
             day=day,

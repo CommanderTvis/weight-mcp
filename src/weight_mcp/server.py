@@ -20,7 +20,7 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from .config import GoalMode, Settings
 from .db import Database
-from .models import DEFAULT_GOALS, Goals, NutritionFacts, Progress
+from .models import DEFAULT_GOALS, FoodLog, Goals, NutritionFacts, Progress
 from .nutrition import NutritionLookup
 from .oauth import DASHBOARD_COOKIE_TTL, SCOPE, PasswordOAuthProvider
 from .ui import APP_BRIDGE_ORIGIN, DASHBOARD_URI, render_dashboard
@@ -46,7 +46,9 @@ order the user reports them: the first food is meal 1, the next is 2, and so on.
 If the user corrects a meal — or edits an earlier message so a food changes — \
 re-log it with the SAME meal number to overwrite it (don't add a duplicate); use \
 `delete_food` to remove one. Because an edited message re-runs from that point, \
-keep numbering by conversation order so the corrected food keeps its number.
+keep numbering by conversation order so the corrected food keeps its number. If \
+you don't know a meal's number (a past day, or a fresh conversation), call \
+`list_meals` to see the day's meals and their numbers before editing or deleting.
 
 If the user reports food eaten on a past day ("yesterday I had..."), pass that \
 day as `day` (YYYY-MM-DD) to `log_food` (and to `delete_food` when removing); \
@@ -192,6 +194,17 @@ def create_app(settings: Settings) -> Starlette:
             f"{label}: {p.kcal:.0f}/{p.kcal_target} kcal, "
             f"{p.protein_g:.0f}/{p.protein_target_g} g protein."
         )
+
+    @mcp.tool(
+        title="List meals",
+        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False),
+    )
+    def list_meals(day: date | None = None) -> list[FoodLog]:
+        """List the meals logged on a day (today by default), each with its
+        meal_number — call this to find the number before overwriting a meal with
+        `log_food` or removing one with `delete_food`. Pass `day` (YYYY-MM-DD) for
+        a past day."""
+        return db.day_food_logs(day or date.today())
 
     @mcp.tool(title="Delete meal")
     def delete_food(meal_number: int, day: date | None = None) -> str:
