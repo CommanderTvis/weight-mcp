@@ -88,9 +88,7 @@ def _003_backfill_meal_numbers(conn: sqlite3.Connection) -> None:
             (day,),
         ).fetchall()
         for row in rows:
-            conn.execute(
-                "UPDATE food_logs SET meal_number = ? WHERE id = ?", (nxt, row["id"])
-            )
+            conn.execute("UPDATE food_logs SET meal_number = ? WHERE id = ?", (nxt, row["id"]))
             nxt += 1
 
 
