@@ -93,7 +93,9 @@ def create_app(settings: Settings) -> Starlette:
             "`show_dashboard` first so they immediately see their weight graph, "
             "recent meals, and today's progress. Then help them log meals "
             "(`log_food`, `lookup_nutrition`), record weight (`record_weight`), "
-            "and adjust targets (`set_goals`)."
+            "and adjust targets (`set_goals`). To correct or remove a meal, call "
+            "`list_meals` to get its number, then `delete_food` (or re-log with "
+            "that number to overwrite) — never guess the number."
         ),
         host=settings.host,
         port=settings.port,
@@ -209,9 +211,18 @@ def create_app(settings: Settings) -> Starlette:
     @mcp.tool(title="Delete meal")
     def delete_food(meal_number: int, day: date | None = None) -> str:
         """Remove a logged meal by its meal_number. Defaults to today; pass `day`
-        (YYYY-MM-DD) to delete from a past day."""
-        if not db.delete_food_log(meal_number, day=day):
-            return f"No meal #{meal_number} logged on {(day or date.today()):%Y-%m-%d}."
+        (YYYY-MM-DD) to delete from a past day. If you don't know the number, call
+        `list_meals` first — don't guess."""
+        d = day or date.today()
+        if not db.delete_food_log(meal_number, day=d):
+            meals = db.day_food_logs(d)
+            if not meals:
+                return f"No meals logged on {d:%Y-%m-%d}, so nothing to delete."
+            listing = "; ".join(f"#{m.meal_number} {m.name}" for m in meals)
+            return (
+                f"No meal #{meal_number} on {d:%Y-%m-%d}. That day's meals are: "
+                f"{listing}. Retry with the right number."
+            )
         p = current_progress(day)
         label = "Today" if p.day == date.today() else f"{p.day:%Y-%m-%d}"
         return (
