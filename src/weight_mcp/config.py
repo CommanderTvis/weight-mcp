@@ -1,7 +1,9 @@
-"""Configuration for the single self-hosting user.
+"""Configuration for the self-hosting admin.
 
-Everything is read from the environment (``.env`` in local/dev). There is no
-per-user config: this server is designed for exactly one person who also hosts it.
+Everything is read from the environment (``.env`` in local/dev). The ``.env``
+holds exactly one account: the admin's. Non-admin accounts are not configured
+here — the admin registers them at runtime via MCP tools and they live in the
+database.
 """
 
 from pathlib import Path
@@ -24,7 +26,8 @@ class Settings(BaseSettings):
     )
 
     # --- auth ---------------------------------------------------------------
-    # The single shared secret. The OAuth gate asks for nothing but this.
+    # The admin account's password (username: "admin"). Also the JWT signing
+    # root: rotating it invalidates every outstanding token for every user.
     password: str = Field(min_length=1)
 
     # Public, externally reachable base URL of this server, e.g.

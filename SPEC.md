@@ -1,7 +1,8 @@
 # weight-mcp — Spec
 
 A personal calorie & protein counter delivered **as an MCP server** for use inside
-claude.ai. Single-user, self-hosted. This document only covers the
+claude.ai. Self-hosted, multi-user (one admin + admin-registered accounts). This
+document only covers the
 distinguishable, non-default decisions; everything unmentioned follows ordinary
 conventions.
 
@@ -35,21 +36,33 @@ Three components in one deployable:
 
 ### Database choice: SQLite
 
-Single user, self-hosted, low write volume → SQLite is the correct default.
-One file, zero operational overhead, backup = copy the file. No reason for a
-client/server DB (Postgres/MySQL) at this scale; it would only add ops burden.
+A handful of users, self-hosted, low write volume → SQLite is the correct
+default. One file, zero operational overhead, backup = copy the file. No reason
+for a client/server DB (Postgres/MySQL) at this scale; it would only add ops
+burden.
 
 ## Security & auth model
 
-- **Single-user by design.** The person self-hosting *is* the only user. No
-  multi-tenant concerns, no user table, no registration.
-- **Password lives in `.env`.** The one secret is a configured password.
-- **OAuth gate asks for the password only.** We implement the minimal OAuth flow
-  that claude.ai expects when adding an MCP server, but the human-facing step is a
-  single password field — no username, no third-party IdP, no email.
+- **One admin + registered users.** The `.env` holds exactly one account: the
+  **admin** (username `admin`, password `WEIGHT_MCP_PASSWORD`). All other
+  accounts are created by the admin at runtime — via the `register_user`,
+  `deregister_user`, and `update_user_password` MCP tools — and stored in the
+  database with salted PBKDF2 password hashes. No self-registration, no
+  third-party IdP, no email.
+- **OAuth gate asks for username + password.** We implement the minimal OAuth
+  flow that claude.ai expects when adding an MCP server; the human-facing step
+  is a username + password form.
+- **Per-user data.** Every row (weights, food logs, goals) is scoped to the
+  authenticated account (the token's `sub`); tools never cross accounts.
+- **Revocation without token state.** Tokens are stateless JWTs signed with a
+  key derived from the admin password and stamped with a digest of the user's
+  current password. Updating a user's password (or deregistering them)
+  invalidates that user's tokens; rotating the admin password invalidates
+  everyone's.
 
 This is "plain OAuth": real enough to satisfy the claude.ai connector handshake,
-but the credential is just the shared password from `.env`.
+but the credentials are just the admin `.env` password or an admin-registered
+account.
 
 ## MCP surface
 
@@ -72,9 +85,9 @@ the dashboard.
 
 ## Configuration
 
-All configuration is for the single self-hosting user:
+All configuration is for the self-hosting admin (other accounts live in the DB):
 
-- **`password`** — the OAuth gate secret.
+- **`password`** — the admin account's secret (and the JWT signing root).
 - **Nutrition-fact database config** — which public DBs to query, and how.
   **Default: pre-filled for a user in Germany** (German/EU food databases out of
   the box). Other regions reconfigure this.
