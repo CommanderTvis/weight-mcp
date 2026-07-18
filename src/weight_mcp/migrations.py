@@ -92,7 +92,59 @@ def _003_backfill_meal_numbers(conn: sqlite3.Connection) -> None:
             nxt += 1
 
 
-MIGRATIONS = [_001_baseline, _002_meal_numbers, _003_backfill_meal_numbers]
+def _004_users(conn: sqlite3.Connection) -> None:
+    """Multi-user: a ``users`` table for the non-admin accounts the admin
+    registers, and a ``username`` column scoping every data row. All data that
+    exists before this migration belongs to the admin account ("admin"), whose
+    password still lives in the environment, not in this table."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            username      TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            created_at    TEXT NOT NULL
+        )
+        """
+    )
+    for table in ("weight_entries", "food_logs"):
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}  # noqa: S608
+        if "username" not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN username TEXT NOT NULL DEFAULT 'admin'")  # noqa: S608
+    # Meal numbers count per user per day now.
+    conn.execute("DROP INDEX IF EXISTS idx_food_day_number")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_food_user_day_number "
+        "ON food_logs (username, eaten_day, meal_number)"
+    )
+    # Goals go from one global row (id = 1) to one row per username. The rename
+    # dance is guarded so a partially-applied run (crash mid-step) re-applies
+    # cleanly: whatever still sits in goals_v1 is migrated, then dropped.
+    tables = {
+        r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+    if "goals" in tables:
+        goal_columns = {row["name"] for row in conn.execute("PRAGMA table_info(goals)")}
+        if "username" in goal_columns:
+            return  # already migrated
+        conn.execute("ALTER TABLE goals RENAME TO goals_v1")
+    conn.execute(
+        """
+        CREATE TABLE goals (
+            username            TEXT PRIMARY KEY,
+            goal_mode           TEXT    NOT NULL,
+            calorie_target_kcal INTEGER NOT NULL,
+            protein_target_g    INTEGER NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "INSERT OR IGNORE INTO goals (username, goal_mode, calorie_target_kcal, protein_target_g) "
+        "SELECT 'admin', goal_mode, calorie_target_kcal, protein_target_g FROM goals_v1"
+    )
+    conn.execute("DROP TABLE goals_v1")
+
+
+MIGRATIONS = [_001_baseline, _002_meal_numbers, _003_backfill_meal_numbers, _004_users]
 
 
 def migrate(conn: sqlite3.Connection) -> None:
