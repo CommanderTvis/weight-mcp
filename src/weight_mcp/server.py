@@ -59,7 +59,10 @@ re-log it with the SAME meal number to overwrite it (don't add a duplicate); use
 `delete_food` to remove one. Because an edited message re-runs from that point, \
 keep numbering by conversation order so the corrected food keeps its number. If \
 you don't know a meal's number (a past day, or a fresh conversation), call \
-`list_meals` to see the day's meals and their numbers before editing or deleting.
+`list_meals` to see the day's meals and their numbers before editing or deleting. \
+Never ask the user for a meal number — resolve their description ("the burger", \
+"the second one") yourself from that list, and only ask if it's genuinely \
+ambiguous which meal they mean, naming the candidates.
 
 If the user reports food eaten on a past day ("yesterday I had..."), pass that \
 day as `day` (YYYY-MM-DD) to `log_food` (and to `delete_food` when removing); \
@@ -106,10 +109,12 @@ def create_app(settings: Settings) -> Starlette:
             "progress. Then help them log meals (`log_food`, `lookup_nutrition`), "
             "record weight (`record_weight`), and adjust targets (`set_goals`). "
             "To correct or remove a meal, call `list_meals` to get its number, "
-            "then `delete_food` (or re-log with that number to overwrite) — never "
-            "guess the number. The admin account can additionally manage user "
-            "accounts with `register_user`, `deregister_user`, and "
-            "`update_user_password`."
+            "then `delete_food` (or re-log with that number to overwrite). Meal "
+            "numbers are internal bookkeeping: never guess one, and never ask the "
+            "user to look one up — when they say 'the burger' or 'the second "
+            "one', call `list_meals` yourself and match their description by name "
+            "and order. The admin account can additionally manage user accounts "
+            "with `register_user`, `deregister_user`, and `update_user_password`."
         ),
         host=settings.host,
         port=settings.port,
@@ -231,15 +236,17 @@ def create_app(settings: Settings) -> Starlette:
     def list_meals(day: date | None = None) -> list[FoodLog]:
         """List the meals logged on a day (today by default), each with its
         meal_number — call this to find the number before overwriting a meal with
-        `log_food` or removing one with `delete_food`. Pass `day` (YYYY-MM-DD) for
-        a past day."""
+        `log_food` or removing one with `delete_food`. When the user names a meal
+        ("delete the burger"), call this and match it yourself instead of asking
+        them for the number. Pass `day` (YYYY-MM-DD) for a past day."""
         return db.day_food_logs(current_username(), day or date.today())
 
     @mcp.tool(title="Delete meal")
     def delete_food(meal_number: int, day: date | None = None) -> str:
         """Remove a logged meal by its meal_number. Defaults to today; pass `day`
         (YYYY-MM-DD) to delete from a past day. If you don't know the number, call
-        `list_meals` first — don't guess."""
+        `list_meals` and match the user's description — don't guess, and don't ask
+        the user to look the number up."""
         username = current_username()
         d = day or date.today()
         if not db.delete_food_log(username, meal_number, day=d):
