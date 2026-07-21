@@ -16,7 +16,7 @@ from .models import FoodLog, Progress, WeightEntry
 DASHBOARD_URI = "ui://weight-mcp/dashboard"
 
 _FAVICON = (
-    "<link rel=\"icon\" href=\"data:image/svg+xml,"
+    '<link rel="icon" href="data:image/svg+xml,'
     "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>"
     "<path fill='%234f9dff' d='M2 9h2.5v6H2zm4-2h2.5v10H6zm9.5 0H18v10h-2.5z"
     "m4 2H22v6h-2.5zM9.5 11h5v2h-5z'/></svg>\">"
