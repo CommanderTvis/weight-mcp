@@ -29,6 +29,7 @@ class OffNutriments(BaseModel):
     protein_g_per_100g: float | None = Field(default=None, alias="proteins_100g")
     carbs_g_per_100g: float | None = Field(default=None, alias="carbohydrates_100g")
     fat_g_per_100g: float | None = Field(default=None, alias="fat_100g")
+    fiber_g_per_100g: float | None = Field(default=None, alias="fiber_100g")
 
     @field_validator("*", mode="before")
     @classmethod
@@ -88,6 +89,7 @@ def off_to_facts(product: OffProduct) -> NutritionFacts:
         protein_g_per_100g=n.protein_g_per_100g,
         carbs_g_per_100g=n.carbs_g_per_100g,
         fat_g_per_100g=n.fat_g_per_100g,
+        fiber_g_per_100g=n.fiber_g_per_100g,
     )
 
 
@@ -102,6 +104,7 @@ def usda_to_facts(food: UsdaFood) -> NutritionFacts:
         protein_g_per_100g=by_number.get("203"),
         carbs_g_per_100g=by_number.get("205"),
         fat_g_per_100g=by_number.get("204"),
+        fiber_g_per_100g=by_number.get("291"),
     )
 
 

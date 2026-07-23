@@ -17,6 +17,7 @@ def test_off_normalization() -> None:
                 "proteins_100g": 11,
                 "carbohydrates_100g": 4,
                 "fat_100g": 0.2,
+                "fiber_100g": 1.5,
                 "energy_100g": 264,  # kJ — must be ignored
             },
         }
@@ -25,6 +26,7 @@ def test_off_normalization() -> None:
     assert facts.source == "off"
     assert facts.kcal_per_100g == 63
     assert facts.protein_g_per_100g == 11
+    assert facts.fiber_g_per_100g == 1.5
     assert facts.brand == "Arla"
 
 
@@ -52,6 +54,7 @@ def test_usda_normalization() -> None:
                 {"nutrientNumber": "208", "value": 165},
                 {"nutrientNumber": "203", "value": 31},
                 {"nutrientNumber": "204", "value": 3.6},
+                {"nutrientNumber": "291", "value": 0.5},
             ],
         }
     )
@@ -60,4 +63,5 @@ def test_usda_normalization() -> None:
     assert facts.kcal_per_100g == 165
     assert facts.protein_g_per_100g == 31
     assert facts.fat_g_per_100g == 3.6
+    assert facts.fiber_g_per_100g == 0.5
     assert facts.source_id == "999"

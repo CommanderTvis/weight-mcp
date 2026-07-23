@@ -123,6 +123,15 @@ def test_day_totals_sums_only_that_day(db: Database) -> None:
     assert totals.item_count == 2
 
 
+def test_fiber_is_optional_and_summed(db: Database) -> None:
+    when = datetime(2026, 1, 1, 9, 0)
+    db.add_food_log(USER, name="oats", kcal=300, protein_g=10, fiber_g=8, eaten_at=when)
+    db.add_food_log(USER, name="eggs", kcal=200, protein_g=18, eaten_at=when)  # fiber not tracked
+    logs = db.day_food_logs(USER, date(2026, 1, 1))
+    assert [log.fiber_g for log in logs] == [8, None]
+    assert db.day_totals(USER, date(2026, 1, 1)).fiber_g == 8
+
+
 def test_empty_day_totals_are_zero(db: Database) -> None:
     totals = db.day_totals(USER, date(2026, 1, 1))
     assert totals.kcal == 0
@@ -140,6 +149,17 @@ def test_goals_roundtrip(db: Database) -> None:
     assert updated is not None
     assert updated.goal_mode == "ceiling"
     assert updated.calorie_target_kcal == 1800
+    assert updated.fiber_target_g is None  # no fiber norm unless set
+
+    db.save_goals(
+        USER,
+        Goals(
+            goal_mode="ceiling", calorie_target_kcal=1800, protein_target_g=120, fiber_target_g=30
+        ),
+    )
+    with_fiber = db.get_goals(USER)
+    assert with_fiber is not None
+    assert with_fiber.fiber_target_g == 30
 
 
 def test_oauth_client_roundtrip(db: Database) -> None:

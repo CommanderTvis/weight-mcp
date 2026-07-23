@@ -13,6 +13,9 @@ class Goals(BaseModel):
     goal_mode: GoalMode
     calorie_target_kcal: int
     protein_target_g: int
+    # Optional: no fiber norm unless the user sets one. Always a floor (eat at
+    # least), regardless of goal_mode.
+    fiber_target_g: int | None = None
 
 
 # Used until the user sets their own. "floor" = eat at least this (under-eater).
@@ -38,6 +41,7 @@ class FoodLog(BaseModel):
     protein_g: float
     carbs_g: float | None
     fat_g: float | None
+    fiber_g: float | None = None
     source: str | None  # e.g. "off", "usda", "manual"
 
 
@@ -52,6 +56,7 @@ class NutritionFacts(BaseModel):
     protein_g_per_100g: float | None
     carbs_g_per_100g: float | None
     fat_g_per_100g: float | None
+    fiber_g_per_100g: float | None = None
 
 
 class DayTotals(BaseModel):
@@ -60,6 +65,7 @@ class DayTotals(BaseModel):
     protein_g: float
     carbs_g: float
     fat_g: float
+    fiber_g: float
     item_count: int
 
 
@@ -72,6 +78,8 @@ class Progress(BaseModel):
     kcal_target: int
     protein_g: float
     protein_target_g: int
+    fiber_g: float = 0.0
+    fiber_target_g: int | None = None  # no fiber norm unless set
 
     @property
     def kcal_remaining(self) -> float:
@@ -80,3 +88,9 @@ class Progress(BaseModel):
     @property
     def protein_remaining_g(self) -> float:
         return self.protein_target_g - self.protein_g
+
+    @property
+    def fiber_remaining_g(self) -> float | None:
+        if self.fiber_target_g is None:
+            return None
+        return self.fiber_target_g - self.fiber_g

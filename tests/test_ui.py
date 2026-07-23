@@ -4,7 +4,7 @@ from weight_mcp.models import FoodLog, Progress, WeightEntry
 from weight_mcp.ui import render_dashboard
 
 
-def _progress(mode: str = "floor") -> Progress:
+def _progress(mode: str = "floor", fiber_target_g: int | None = None) -> Progress:
     return Progress(
         day=date(2026, 1, 1),
         goal_mode=mode,
@@ -12,6 +12,8 @@ def _progress(mode: str = "floor") -> Progress:
         kcal_target=2600,
         protein_g=120,
         protein_target_g=150,
+        fiber_g=12,
+        fiber_target_g=fiber_target_g,
     )
 
 
@@ -38,6 +40,12 @@ def test_render_includes_data_and_escapes_names() -> None:
     assert "2600 kcal" in html
     assert "&lt;b&gt;Br" in html  # meal name HTML-escaped
     assert "<b>Br" not in html
+
+
+def test_fiber_card_only_when_norm_is_set() -> None:
+    assert "g fiber" not in render_dashboard([], [], _progress())
+    html = render_dashboard([], [], _progress(fiber_target_g=30))
+    assert "30 g fiber" in html
 
 
 def test_render_handles_no_data() -> None:

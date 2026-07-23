@@ -107,7 +107,9 @@ def create_app(settings: Settings) -> Starlette:
             "or asks how they're doing, call `show_dashboard` first so they "
             "immediately see their weight graph, recent meals, and today's "
             "progress. Then help them log meals (`log_food`, `lookup_nutrition`), "
-            "record weight (`record_weight`), and adjust targets (`set_goals`). "
+            "record weight (`record_weight`), and adjust targets (`set_goals`; "
+            "an optional daily fiber norm can be set there too — there is none "
+            "by default). "
             "To correct or remove a meal, call `list_meals` to get its number, "
             "then `delete_food` (or re-log with that number to overwrite). Meal "
             "numbers are internal bookkeeping: never guess one, and never ask the "
@@ -155,7 +157,19 @@ def create_app(settings: Settings) -> Starlette:
             kcal_target=goals.calorie_target_kcal,
             protein_g=totals.protein_g,
             protein_target_g=goals.protein_target_g,
+            fiber_g=totals.fiber_g,
+            fiber_target_g=goals.fiber_target_g,
         )
+
+    def progress_line(p: Progress) -> str:
+        """The 'X/Y kcal, X/Y g protein' summary tools return; fiber appears
+        only when the user has set a fiber norm."""
+        line = (
+            f"{p.kcal:.0f}/{p.kcal_target} kcal, {p.protein_g:.0f}/{p.protein_target_g} g protein"
+        )
+        if p.fiber_target_g is not None:
+            line += f", {p.fiber_g:.0f}/{p.fiber_target_g} g fiber"
+        return line
 
     def dashboard_html(username: str, *, embed_app_bridge: bool = False) -> str:
         return render_dashboard(
@@ -177,6 +191,8 @@ def create_app(settings: Settings) -> Starlette:
             else f"to stay UNDER {goals.calorie_target_kcal} kcal per day while "
             f"getting at least {goals.protein_target_g} g protein"
         )
+        if goals.fiber_target_g is not None:
+            goal_desc += f", plus at least {goals.fiber_target_g} g fiber per day"
         return PROMPT_TEXT.format(goal_desc=goal_desc)
 
     # --- tools --------------------------------------------------------------
@@ -196,6 +212,7 @@ def create_app(settings: Settings) -> Starlette:
         quantity_g: float | None = None,
         carbs_g: float | None = None,
         fat_g: float | None = None,
+        fiber_g: float | None = None,
         day: date | None = None,
     ) -> str:
         """Log one eaten item with its calories and protein (already scaled to the
@@ -204,7 +221,8 @@ def create_app(settings: Settings) -> Starlette:
         revise a meal (the user corrects it, or edits an earlier message), call this
         again with that same meal_number to OVERWRITE it instead of duplicating.
         Pass `day` (YYYY-MM-DD) to log for a past day, e.g. yesterday; meal numbers
-        count per day, so start from that day's existing meals."""
+        count per day, so start from that day's existing meals. If the user has a
+        fiber norm set, also pass fiber_g so their fiber progress stays accurate."""
         username = current_username()
         eaten_at = None
         if day is not None and day != date.today():
@@ -217,6 +235,7 @@ def create_app(settings: Settings) -> Starlette:
             quantity_g=quantity_g,
             carbs_g=carbs_g,
             fat_g=fat_g,
+            fiber_g=fiber_g,
             source="manual",
             eaten_at=eaten_at,
             meal_number=meal_number,
@@ -225,8 +244,7 @@ def create_app(settings: Settings) -> Starlette:
         label = "Today" if p.day == date.today() else f"{p.day:%Y-%m-%d}"
         return (
             f"Meal #{entry.meal_number}: {name} — {kcal:.0f} kcal, {protein_g:.0f} g protein. "
-            f"{label}: {p.kcal:.0f}/{p.kcal_target} kcal, "
-            f"{p.protein_g:.0f}/{p.protein_target_g} g protein."
+            f"{label}: {progress_line(p)}."
         )
 
     @mcp.tool(
@@ -260,10 +278,7 @@ def create_app(settings: Settings) -> Starlette:
             )
         p = current_progress(username, day)
         label = "Today" if p.day == date.today() else f"{p.day:%Y-%m-%d}"
-        return (
-            f"Removed meal #{meal_number}. {label}: {p.kcal:.0f}/{p.kcal_target} kcal, "
-            f"{p.protein_g:.0f}/{p.protein_target_g} g protein."
-        )
+        return f"Removed meal #{meal_number}. {label}: {progress_line(p)}."
 
     @mcp.tool(title="Look up nutrition")
     async def lookup_nutrition(query: str = "", barcode: str | None = None) -> list[NutritionFacts]:
@@ -286,23 +301,27 @@ def create_app(settings: Settings) -> Starlette:
     def set_goals(
         calorie_target_kcal: int | None = None,
         protein_target_g: int | None = None,
+        fiber_target_g: int | None = None,
         goal_mode: GoalMode | None = None,
     ) -> Goals:
         """Update the daily targets. Only the arguments you pass are changed;
-        goal_mode is "floor" (eat at least) or "ceiling" (stay under)."""
+        goal_mode is "floor" (eat at least) or "ceiling" (stay under). The fiber
+        norm is optional and always a minimum: there is none until you set
+        fiber_target_g, and passing 0 removes it again."""
         username = current_username()
         current = db.get_goals(username) or DEFAULT_GOALS
-        goals = current.model_copy(
-            update={
-                k: v
-                for k, v in {
-                    "calorie_target_kcal": calorie_target_kcal,
-                    "protein_target_g": protein_target_g,
-                    "goal_mode": goal_mode,
-                }.items()
-                if v is not None
-            }
-        )
+        update: dict[str, object] = {
+            k: v
+            for k, v in {
+                "calorie_target_kcal": calorie_target_kcal,
+                "protein_target_g": protein_target_g,
+                "goal_mode": goal_mode,
+            }.items()
+            if v is not None
+        }
+        if fiber_target_g is not None:
+            update["fiber_target_g"] = fiber_target_g or None  # 0 clears the norm
+        goals = current.model_copy(update=update)
         db.save_goals(username, goals)
         return goals
 
@@ -389,10 +408,7 @@ def create_app(settings: Settings) -> Starlette:
         or repeat its contents in text. The short text returned here is only a
         fallback summary for clients that can't render the panel."""
         p = current_progress(current_username())
-        return (
-            f"Today: {p.kcal:.0f}/{p.kcal_target} kcal, "
-            f"{p.protein_g:.0f}/{p.protein_target_g} g protein."
-        )
+        return f"Today: {progress_line(p)}."
 
     # --- UI resource (host fetches it via the tool's _meta.ui.resourceUri) --
     # csp.resourceDomains must allow the app-bridge CDN, or the host's CSP blocks

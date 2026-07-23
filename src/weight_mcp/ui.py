@@ -197,6 +197,17 @@ def render_dashboard(
         goal_word,
         above=above,
     )
+    # The fiber norm is optional and always a minimum, whatever the calorie mode.
+    fiber_card = ""
+    if progress.fiber_target_g is not None and progress.fiber_remaining_g is not None:
+        fiber_card = _card(
+            progress.fiber_g,
+            progress.fiber_target_g,
+            "g fiber",
+            progress.fiber_remaining_g,
+            "min",
+            above=True,
+        )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -207,7 +218,7 @@ def render_dashboard(
 <button class="refresh" type="button" aria-label="Refresh dashboard">↻ Refresh</button>
 <main id="board">
 <h1>Today — {progress.day.isoformat()}</h1>
-<div class="cards">{kcal_card}{protein_card}</div>
+<div class="cards">{kcal_card}{protein_card}{fiber_card}</div>
 <h2>Weight</h2>
 {_weight_svg(weights)}
 <h2>Recently eaten</h2>

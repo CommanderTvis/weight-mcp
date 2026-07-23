@@ -29,7 +29,7 @@ registers further accounts from chat — each user sees only their own data. See
 | `record_weight` | Store a body-weight measurement. |
 | `lookup_nutrition` | Query public nutrition databases (Open Food Facts, optional USDA). |
 | `daily_progress` | Today's intake vs. your goal. |
-| `set_goals` | Change the daily calorie/protein targets and floor/ceiling mode. |
+| `set_goals` | Change the daily calorie/protein targets and floor/ceiling mode; optionally set a fiber norm (off by default, `fiber_target_g=0` removes it). |
 | `show_dashboard` | Renders the dashboard inline as an MCP Apps panel (weight graph + recent meals + today's progress). |
 
 All of the above operate on the calling account's own data. The admin account

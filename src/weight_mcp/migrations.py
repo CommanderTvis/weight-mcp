@@ -144,7 +144,17 @@ def _004_users(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE goals_v1")
 
 
-MIGRATIONS = [_001_baseline, _002_meal_numbers, _003_backfill_meal_numbers, _004_users]
+def _005_fiber(conn: sqlite3.Connection) -> None:
+    """Optional fiber tracking: a per-meal ``fiber_g`` and a per-user
+    ``fiber_target_g`` norm. Both nullable — NULL means "not tracked" for a
+    meal and "no norm set" for goals."""
+    for table, column in (("food_logs", "fiber_g"), ("goals", "fiber_target_g")):
+        columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}  # noqa: S608
+        if column not in columns:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column}")  # noqa: S608
+
+
+MIGRATIONS = [_001_baseline, _002_meal_numbers, _003_backfill_meal_numbers, _004_users, _005_fiber]
 
 
 def migrate(conn: sqlite3.Connection) -> None:

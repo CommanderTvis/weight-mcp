@@ -136,6 +136,7 @@ class Database:
         quantity_g: float | None = None,
         carbs_g: float | None = None,
         fat_g: float | None = None,
+        fiber_g: float | None = None,
         source: str | None = None,
         eaten_at: datetime | None = None,
         meal_number: int | None = None,
@@ -154,11 +155,11 @@ class Database:
         self._conn.execute(
             "INSERT INTO food_logs "
             "(username, eaten_at, eaten_day, meal_number, name, quantity_g, kcal, protein_g, "
-            "carbs_g, fat_g, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "carbs_g, fat_g, fiber_g, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(username, eaten_day, meal_number) DO UPDATE SET "
             "eaten_at = excluded.eaten_at, name = excluded.name, quantity_g = excluded.quantity_g, "
             "kcal = excluded.kcal, protein_g = excluded.protein_g, carbs_g = excluded.carbs_g, "
-            "fat_g = excluded.fat_g, source = excluded.source",
+            "fat_g = excluded.fat_g, fiber_g = excluded.fiber_g, source = excluded.source",
             (
                 username,
                 when.isoformat(),
@@ -170,6 +171,7 @@ class Database:
                 protein_g,
                 carbs_g,
                 fat_g,
+                fiber_g,
                 source,
             ),
         )
@@ -188,7 +190,7 @@ class Database:
     def _food_log(self, username: str, day: str, meal_number: int) -> FoodLog:
         row = self._conn.execute(
             "SELECT id, eaten_at, meal_number, name, quantity_g, kcal, protein_g, carbs_g, "
-            "fat_g, source FROM food_logs "
+            "fat_g, fiber_g, source FROM food_logs "
             "WHERE username = ? AND eaten_day = ? AND meal_number = ?",
             (username, day, meal_number),
         ).fetchone()
@@ -205,13 +207,15 @@ class Database:
             protein_g=r["protein_g"],
             carbs_g=r["carbs_g"],
             fat_g=r["fat_g"],
+            fiber_g=r["fiber_g"],
             source=r["source"],
         )
 
     def recent_food_logs(self, username: str, limit: int = 20) -> list[FoodLog]:
         rows = self._conn.execute(
             "SELECT id, eaten_at, meal_number, name, quantity_g, kcal, protein_g, carbs_g, "
-            "fat_g, source FROM food_logs WHERE username = ? ORDER BY eaten_at DESC LIMIT ?",
+            "fat_g, fiber_g, source FROM food_logs "
+            "WHERE username = ? ORDER BY eaten_at DESC LIMIT ?",
             (username, limit),
         ).fetchall()
         return [self._to_food_log(r) for r in rows]
@@ -235,7 +239,8 @@ class Database:
 
     def get_goals(self, username: str) -> Goals | None:
         row = self._conn.execute(
-            "SELECT goal_mode, calorie_target_kcal, protein_target_g FROM goals WHERE username = ?",
+            "SELECT goal_mode, calorie_target_kcal, protein_target_g, fiber_target_g "
+            "FROM goals WHERE username = ?",
             (username,),
         ).fetchone()
         if row is None:
@@ -244,13 +249,21 @@ class Database:
             goal_mode=row["goal_mode"],
             calorie_target_kcal=row["calorie_target_kcal"],
             protein_target_g=row["protein_target_g"],
+            fiber_target_g=row["fiber_target_g"],
         )
 
     def save_goals(self, username: str, goals: Goals) -> None:
         self._conn.execute(
             "INSERT OR REPLACE INTO goals "
-            "(username, goal_mode, calorie_target_kcal, protein_target_g) VALUES (?, ?, ?, ?)",
-            (username, goals.goal_mode, goals.calorie_target_kcal, goals.protein_target_g),
+            "(username, goal_mode, calorie_target_kcal, protein_target_g, fiber_target_g) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                username,
+                goals.goal_mode,
+                goals.calorie_target_kcal,
+                goals.protein_target_g,
+                goals.fiber_target_g,
+            ),
         )
         self._conn.commit()
 
@@ -259,7 +272,7 @@ class Database:
         caller can pick which one to overwrite or delete."""
         rows = self._conn.execute(
             "SELECT id, eaten_at, meal_number, name, quantity_g, kcal, protein_g, carbs_g, "
-            "fat_g, source FROM food_logs WHERE username = ? AND eaten_day = ? "
+            "fat_g, fiber_g, source FROM food_logs WHERE username = ? AND eaten_day = ? "
             "ORDER BY meal_number, eaten_at",
             (username, day.isoformat()),
         ).fetchall()
@@ -274,6 +287,7 @@ class Database:
             "  COALESCE(SUM(protein_g), 0) AS protein_g, "
             "  COALESCE(SUM(carbs_g), 0)   AS carbs_g, "
             "  COALESCE(SUM(fat_g), 0)     AS fat_g, "
+            "  COALESCE(SUM(fiber_g), 0)   AS fiber_g, "
             "  COUNT(*)                    AS item_count "
             "FROM food_logs WHERE username = ? AND eaten_day = ?",
             (username, day.isoformat()),
@@ -284,5 +298,6 @@ class Database:
             protein_g=row["protein_g"],
             carbs_g=row["carbs_g"],
             fat_g=row["fat_g"],
+            fiber_g=row["fiber_g"],
             item_count=row["item_count"],
         )
