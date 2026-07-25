@@ -144,33 +144,43 @@ _APP_BRIDGE = f"""
     const app = new App({{ name: "weight-mcp dashboard", version: "1.0.0" }});
     await app.connect();
     window.__wmApp = app;  // the Refresh button reads the resource back through it
+    await window.__wmRefresh();  // the host's copy may predate the latest meal
   }}
-  catch (err) {{ /* not inside an MCP host — content is already rendered */ }}
+  catch (err) {{ /* no MCP host, or the re-read failed — content is already rendered */ }}
 </script>"""
 
 
-# Re-render in place on click. Inside an MCP host we ask the bridge to read the
-# dashboard resource again (no tool round-trip, no chat noise); on the plain web
-# page we just re-fetch this URL. Either way we swap only #board, leaving the
-# button (and the connected bridge) untouched.
+# Re-render in place. Inside an MCP host we ask the bridge to read the dashboard
+# resource again (no tool round-trip, no chat noise); on the plain web page we just
+# re-fetch this URL. Either way we swap only #board, leaving the button (and the
+# connected bridge) untouched.
+#
+# This runs on click *and* once the bridge connects: because the data is baked into
+# the resource, a host that serves a cached copy of ui:// would otherwise paint
+# numbers from whenever it first fetched it — so a meal logged or deleted since
+# then wouldn't show. Re-reading on connect makes every mount current.
 _REFRESH = f"""
 <script>
+  window.__wmRefresh = async () => {{
+    let html;
+    if (window.__wmApp) {{
+      const res = await window.__wmApp.readServerResource({{ uri: "{DASHBOARD_URI}" }});
+      html = res.contents && res.contents[0] && res.contents[0].text;
+    }} else if (window.self === window.top) {{
+      html = await (await fetch(location.href, {{ credentials: "same-origin" }})).text();
+    }} else {{
+      return;  // framed by a host but the bridge isn't up yet: location.href isn't ours
+    }}
+    if (html) {{
+      const next = new DOMParser().parseFromString(html, "text/html").getElementById("board");
+      if (next) document.getElementById("board").replaceWith(next);
+    }}
+  }};
   document.querySelector(".refresh").addEventListener("click", async (e) => {{
     const btn = e.currentTarget;
     btn.disabled = true;
-    try {{
-      let html;
-      if (window.__wmApp) {{
-        const res = await window.__wmApp.readServerResource({{ uri: "{DASHBOARD_URI}" }});
-        html = res.contents && res.contents[0] && res.contents[0].text;
-      }} else {{
-        html = await (await fetch(location.href, {{ credentials: "same-origin" }})).text();
-      }}
-      if (html) {{
-        const next = new DOMParser().parseFromString(html, "text/html").getElementById("board");
-        if (next) document.getElementById("board").replaceWith(next);
-      }}
-    }} catch (err) {{ /* leave the current view in place */ }}
+    try {{ await window.__wmRefresh(); }}
+    catch (err) {{ /* leave the current view in place */ }}
     finally {{ btn.disabled = false; }}
   }});
 </script>"""

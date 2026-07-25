@@ -61,3 +61,13 @@ def test_app_bridge_is_opt_in() -> None:
     embedded = render_dashboard([], [], _progress(), embed_app_bridge=True)
     assert "app-with-deps.js" in embedded
     assert ".connect()" in embedded
+
+
+def test_panel_rereads_itself_once_the_bridge_connects() -> None:
+    # The stat cards are baked in server-side, so a host serving a cached copy of
+    # the resource would show pre-delete numbers forever without this re-read.
+    embedded = render_dashboard([], [], _progress(), embed_app_bridge=True)
+    assert "window.__wmRefresh = async" in embedded
+    assert "await window.__wmRefresh();" in embedded
+    # Framed but not yet connected: don't fetch the host's own document.
+    assert "window.self === window.top" in embedded
