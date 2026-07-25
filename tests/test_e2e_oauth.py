@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from collections.abc import Iterator
+from datetime import date, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
@@ -346,3 +347,33 @@ def test_admin_manages_users_and_data_is_isolated(client: TestClient) -> None:
     ):
         result = admin.call_tool("register_user", args)
         assert result.get("isError"), args
+
+
+def test_intake_history_summarizes_a_window_of_days(client: TestClient) -> None:
+    admin = McpSession(client, _obtain_token(client, ADMIN, PASSWORD))
+    yesterday = date.today() - timedelta(days=1)
+    for args in (
+        {"name": "oats", "kcal": 300, "protein_g": 10, "meal_number": 1},
+        {
+            "name": "rice",
+            "kcal": 500,
+            "protein_g": 20,
+            "meal_number": 1,
+            "day": yesterday.isoformat(),
+        },
+    ):
+        result = admin.call_tool("log_food", args)
+        assert not result.get("isError"), _text(result)
+
+    history = admin.call_tool("intake_history", {"days": 7})
+    assert not history.get("isError"), _text(history)
+    data = history["structuredContent"]
+    assert data["days_logged"] == 2
+    assert [d["kcal"] for d in data["days"]] == [500, 300]  # oldest first
+    assert data["avg_kcal"] == 400
+    assert data["end_day"] == date.today().isoformat()
+
+    # A one-day window sees only today, and the range is validated.
+    today_only = admin.call_tool("intake_history", {"days": 1})["structuredContent"]
+    assert [d["kcal"] for d in today_only["days"]] == [300]
+    assert admin.call_tool("intake_history", {"days": 0}).get("isError")

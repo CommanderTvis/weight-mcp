@@ -123,6 +123,23 @@ def test_day_totals_sums_only_that_day(db: Database) -> None:
     assert totals.item_count == 2
 
 
+def test_day_totals_range_groups_by_day_and_skips_empty_days(db: Database) -> None:
+    db.add_food_log(USER, name="oats", kcal=300, protein_g=10, eaten_at=datetime(2026, 1, 1, 9, 0))
+    db.add_food_log(USER, name="eggs", kcal=200, protein_g=18, eaten_at=datetime(2026, 1, 1, 12, 0))
+    # Nothing on 2026-01-02.
+    db.add_food_log(USER, name="rice", kcal=400, protein_g=8, eaten_at=datetime(2026, 1, 3, 9, 0))
+    outside = datetime(2026, 1, 4, 9, 0)
+    db.add_food_log(USER, name="outside", kcal=999, protein_g=99, eaten_at=outside)
+    db.add_food_log("bob", name="theirs", kcal=111, protein_g=1, eaten_at=datetime(2026, 1, 1, 9))
+
+    totals = db.day_totals_range(USER, date(2026, 1, 1), date(2026, 1, 3))
+    assert [(t.day, t.kcal, t.item_count) for t in totals] == [
+        (date(2026, 1, 1), 500, 2),
+        (date(2026, 1, 3), 400, 1),
+    ]
+    assert db.day_totals_range(USER, date(2025, 12, 1), date(2025, 12, 31)) == []
+
+
 def test_fiber_is_optional_and_summed(db: Database) -> None:
     when = datetime(2026, 1, 1, 9, 0)
     db.add_food_log(USER, name="oats", kcal=300, protein_g=10, fiber_g=8, eaten_at=when)

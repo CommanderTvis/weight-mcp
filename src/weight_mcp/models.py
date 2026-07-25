@@ -69,6 +69,22 @@ class DayTotals(BaseModel):
     item_count: int
 
 
+class IntakeHistory(BaseModel):
+    """Per-day intake over a window of days, with averages taken across the days
+    that actually have logged meals (untracked days would drag them down)."""
+
+    start_day: date
+    end_day: date
+    days: list[DayTotals]  # only the days with logged meals, oldest first
+    days_logged: int
+    avg_kcal: float
+    avg_protein_g: float
+    avg_fiber_g: float
+    kcal_target: int
+    protein_target_g: int
+    fiber_target_g: int | None = None
+
+
 class Progress(BaseModel):
     """Today's intake against the configured goal."""
 

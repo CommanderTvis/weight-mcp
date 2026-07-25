@@ -14,7 +14,7 @@ to register, deregister, and reset passwords of DB-backed non-admin users.
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
@@ -27,7 +27,7 @@ from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from .config import GoalMode, Settings
 from .db import Database, hash_password
-from .models import DEFAULT_GOALS, FoodLog, Goals, NutritionFacts, Progress
+from .models import DEFAULT_GOALS, FoodLog, Goals, IntakeHistory, NutritionFacts, Progress
 from .nutrition import NutritionLookup
 from .oauth import ADMIN_USERNAME, DASHBOARD_COOKIE_TTL, SCOPE, PasswordOAuthProvider
 from .ui import APP_BRIDGE_ORIGIN, DASHBOARD_URI, render_dashboard
@@ -69,8 +69,9 @@ day as `day` (YYYY-MM-DD) to `log_food` (and to `delete_food` when removing); \
 meal numbers count per day, so continue from that day's own meals.
 
 Use `record_weight` whenever the user reports a weight. Call `daily_progress` to \
-check intake against the goal, and `show_dashboard` to display the weight graph \
-and recent meals (for example at the end of the day).
+check intake against the goal, `intake_history` when the user asks about a past \
+stretch ("last week", "this month", averages, trends), and `show_dashboard` to \
+display the weight graph and recent meals (for example at the end of the day).
 
 The user's goal is {goal_desc}. Be encouraging and concrete about what's left to \
 hit it today."""
@@ -109,7 +110,9 @@ def create_app(settings: Settings) -> Starlette:
             "progress. Then help them log meals (`log_food`, `lookup_nutrition`), "
             "record weight (`record_weight`), and adjust targets (`set_goals`; "
             "an optional daily fiber norm can be set there too — there is none "
-            "by default). "
+            "by default). For anything spanning more than today — 'calories last "
+            "week', monthly averages, trends — call `intake_history`, which "
+            "returns per-day totals and averages for a window of days. "
             "To correct or remove a meal, call `list_meals` to get its number, "
             "then `delete_food` (or re-log with that number to overwrite). Meal "
             "numbers are internal bookkeeping: never guess one, and never ask the "
@@ -296,6 +299,37 @@ def create_app(settings: Settings) -> Starlette:
     def daily_progress() -> Progress:
         """Today's calorie and protein intake against the configured goal."""
         return current_progress(current_username())
+
+    @mcp.tool(
+        title="Intake history",
+        annotations=ToolAnnotations(readOnlyHint=True, idempotentHint=True, openWorldHint=False),
+    )
+    def intake_history(days: int = 7, end_day: date | None = None) -> IntakeHistory:
+        """Per-day calorie, protein and fiber totals over the last `days` days
+        (ending today, or at `end_day`), plus the averages across the days that
+        have logged meals and the current targets. Use this for "how did I do last
+        week", weekly or monthly stats, and trends; `daily_progress` covers today
+        alone. Days with nothing logged are left out of the list and the averages."""
+        if not 1 <= days <= 366:
+            raise ValueError("days must be between 1 and 366.")
+        username = current_username()
+        end = end_day or date.today()
+        start = end - timedelta(days=days - 1)
+        totals = db.day_totals_range(username, start, end)
+        goals = db.get_goals(username) or DEFAULT_GOALS
+        n = len(totals)
+        return IntakeHistory(
+            start_day=start,
+            end_day=end,
+            days=totals,
+            days_logged=n,
+            avg_kcal=sum(t.kcal for t in totals) / n if n else 0.0,
+            avg_protein_g=sum(t.protein_g for t in totals) / n if n else 0.0,
+            avg_fiber_g=sum(t.fiber_g for t in totals) / n if n else 0.0,
+            kcal_target=goals.calorie_target_kcal,
+            protein_target_g=goals.protein_target_g,
+            fiber_target_g=goals.fiber_target_g,
+        )
 
     @mcp.tool(title="Set goals")
     def set_goals(

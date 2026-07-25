@@ -278,6 +278,36 @@ class Database:
         ).fetchall()
         return [self._to_food_log(r) for r in rows]
 
+    def day_totals_range(self, username: str, start: date, end: date) -> list[DayTotals]:
+        """Per-day totals between two days inclusive, oldest first. Days without
+        logged meals are absent rather than zero rows — the caller decides
+        whether an untracked day counts."""
+        rows = self._conn.execute(
+            "SELECT "
+            "  eaten_day                   AS day, "
+            "  COALESCE(SUM(kcal), 0)      AS kcal, "
+            "  COALESCE(SUM(protein_g), 0) AS protein_g, "
+            "  COALESCE(SUM(carbs_g), 0)   AS carbs_g, "
+            "  COALESCE(SUM(fat_g), 0)     AS fat_g, "
+            "  COALESCE(SUM(fiber_g), 0)   AS fiber_g, "
+            "  COUNT(*)                    AS item_count "
+            "FROM food_logs WHERE username = ? AND eaten_day BETWEEN ? AND ? "
+            "GROUP BY eaten_day ORDER BY eaten_day",
+            (username, start.isoformat(), end.isoformat()),
+        ).fetchall()
+        return [
+            DayTotals(
+                day=date.fromisoformat(r["day"]),
+                kcal=r["kcal"],
+                protein_g=r["protein_g"],
+                carbs_g=r["carbs_g"],
+                fat_g=r["fat_g"],
+                fiber_g=r["fiber_g"],
+                item_count=r["item_count"],
+            )
+            for r in rows
+        ]
+
     def day_totals(self, username: str, day: date) -> DayTotals:
         # eaten_day is the single source of truth for which day a row belongs to
         # (delete_food and the meal-number index key on it too).
