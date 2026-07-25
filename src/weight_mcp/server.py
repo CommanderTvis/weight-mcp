@@ -52,14 +52,21 @@ For each food the user reports:
 the user gives one, otherwise search by name). Pick the best match and scale it \
 to the amount eaten.
 3. Call `log_food` with the resulting kcal and protein, numbering meals by the \
-order the user reports them: the first food is meal 1, the next is 2, and so on.
+order the user reports them but continuing the day's existing numbering: the \
+first food of an empty day is meal 1, the next is 2, and so on. The day may \
+already have meals from an earlier conversation, so omit `meal_number` (the \
+server appends) unless you know the day's numbers from `list_meals`.
 
 If the user corrects a meal — or edits an earlier message so a food changes — \
-re-log it with the SAME meal number to overwrite it (don't add a duplicate); use \
-`delete_food` to remove one. Because an edited message re-runs from that point, \
-keep numbering by conversation order so the corrected food keeps its number. If \
-you don't know a meal's number (a past day, or a fresh conversation), call \
-`list_meals` to see the day's meals and their numbers before editing or deleting. \
+re-log it with the SAME meal number and `overwrite=True` to replace it (don't add \
+a duplicate); use `delete_food` to remove one. Only ever pass `overwrite=True` when \
+you mean to replace that exact meal: without it, reusing a taken number is refused \
+instead of destroying the meal already under it. Because an edited message re-runs \
+from that point, keep numbering by conversation order so the corrected food keeps \
+its number. If you don't know a meal's number (a past day, or a fresh \
+conversation), call `list_meals` to see the day's meals and their numbers first — \
+in a new conversation the day may already have meals, so never assume the first \
+food you hear about is meal 1. \
 Never ask the user for a meal number — resolve their description ("the burger", \
 "the second one") yourself from that list, and only ask if it's genuinely \
 ambiguous which meal they mean, naming the candidates.
@@ -114,7 +121,7 @@ def create_app(settings: Settings) -> Starlette:
             "week', monthly averages, trends — call `intake_history`, which "
             "returns per-day totals and averages for a window of days. "
             "To correct or remove a meal, call `list_meals` to get its number, "
-            "then `delete_food` (or re-log with that number to overwrite). Meal "
+            "then `delete_food` (or re-log with that number and overwrite=True). Meal "
             "numbers are internal bookkeeping: never guess one, and never ask the "
             "user to look one up — when they say 'the burger' or 'the second "
             "one', call `list_meals` yourself and match their description by name "
@@ -217,16 +224,33 @@ def create_app(settings: Settings) -> Starlette:
         fat_g: float | None = None,
         fiber_g: float | None = None,
         day: date | None = None,
+        overwrite: bool = False,
     ) -> str:
         """Log one eaten item with its calories and protein (already scaled to the
-        amount eaten). Number meals by their order in the conversation: the first
-        food reported is meal_number 1, the next 2, and so on — always pass it. To
+        amount eaten). Number meals by their order in the conversation, continuing the
+        day's existing numbering — omit meal_number to append as the day's next meal
+        when you don't know its numbers (the day may already have meals from an
+        earlier conversation, so the first food you hear about need not be meal 1). To
         revise a meal (the user corrects it, or edits an earlier message), call this
-        again with that same meal_number to OVERWRITE it instead of duplicating.
-        Pass `day` (YYYY-MM-DD) to log for a past day, e.g. yesterday; meal numbers
-        count per day, so start from that day's existing meals. If the user has a
-        fiber norm set, also pass fiber_g so their fiber progress stays accurate."""
+        again with that same meal_number AND overwrite=True to replace it instead of
+        duplicating; without overwrite=True an already-used number is refused rather
+        than silently replacing that meal. Pass `day` (YYYY-MM-DD) to log for a past
+        day, e.g. yesterday; meal numbers count per day, so start from that day's
+        existing meals. If the user has a fiber norm set, also pass fiber_g so their
+        fiber progress stays accurate."""
         username = current_username()
+        d = day or date.today()
+        if meal_number is not None and not overwrite:
+            taken = next(
+                (m for m in db.day_food_logs(username, d) if m.meal_number == meal_number), None
+            )
+            if taken is not None:
+                return (
+                    f"Meal #{meal_number} on {d:%Y-%m-%d} is already '{taken.name}' "
+                    f"({taken.kcal:.0f} kcal). Omit meal_number to add this as a new meal, "
+                    f"or pass overwrite=True if it really should replace that one (e.g. the "
+                    f"user corrected it)."
+                )
         eaten_at = None
         if day is not None and day != date.today():
             eaten_at = datetime.combine(day, datetime.now().time())
@@ -243,7 +267,7 @@ def create_app(settings: Settings) -> Starlette:
             eaten_at=eaten_at,
             meal_number=meal_number,
         )
-        p = current_progress(username, day)
+        p = current_progress(username, d)
         label = "Today" if p.day == date.today() else f"{p.day:%Y-%m-%d}"
         return (
             f"Meal #{entry.meal_number}: {name} — {kcal:.0f} kcal, {protein_g:.0f} g protein. "

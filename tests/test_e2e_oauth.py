@@ -377,3 +377,34 @@ def test_intake_history_summarizes_a_window_of_days(client: TestClient) -> None:
     today_only = admin.call_tool("intake_history", {"days": 1})["structuredContent"]
     assert [d["kcal"] for d in today_only["days"]] == [300]
     assert admin.call_tool("intake_history", {"days": 0}).get("isError")
+
+
+def test_reusing_a_meal_number_needs_overwrite(client: TestClient) -> None:
+    # A fresh conversation numbering from 1 must not silently destroy the meal
+    # already under that number — the day's calories would drop instead of rise.
+    admin = McpSession(client, _obtain_token(client, ADMIN, PASSWORD))
+    admin.call_tool(
+        "log_food", {"name": "porridge", "kcal": 400, "protein_g": 12, "meal_number": 1}
+    )
+
+    refused = admin.call_tool(
+        "log_food", {"name": "burger", "kcal": 900, "protein_g": 40, "meal_number": 1}
+    )
+    assert "already 'porridge'" in _text(refused)
+    assert _text(admin.call_tool("list_meals", {})).count("porridge") == 1
+    assert admin.call_tool("daily_progress", {})["structuredContent"]["kcal"] == 400
+
+    # Omitting the number appends instead, and overwrite=True still replaces.
+    admin.call_tool("log_food", {"name": "burger", "kcal": 900, "protein_g": 40})
+    assert admin.call_tool("daily_progress", {})["structuredContent"]["kcal"] == 1300
+    admin.call_tool(
+        "log_food",
+        {
+            "name": "porridge (bigger)",
+            "kcal": 500,
+            "protein_g": 15,
+            "meal_number": 1,
+            "overwrite": True,
+        },
+    )
+    assert admin.call_tool("daily_progress", {})["structuredContent"]["kcal"] == 1400
