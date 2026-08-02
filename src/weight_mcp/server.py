@@ -30,6 +30,7 @@ from .db import Database, hash_password
 from .models import DEFAULT_GOALS, FoodLog, Goals, IntakeHistory, NutritionFacts, Progress
 from .nutrition import NutritionLookup
 from .oauth import ADMIN_USERNAME, DASHBOARD_COOKIE_TTL, SCOPE, PasswordOAuthProvider
+from .telegram import TelegramReporter, format_daily_report
 from .ui import APP_BRIDGE_ORIGIN, DASHBOARD_URI, render_dashboard
 from .web import login_page
 
@@ -87,6 +88,7 @@ hit it today."""
 def create_app(settings: Settings) -> Starlette:
     db = Database(settings.database_path)
     nutrition = NutritionLookup(settings)
+    telegram = TelegramReporter(settings.telegram_bot_token, settings.telegram_chat_id)
     # MCP is served at the origin root so the bare URL the user pastes into
     # claude.ai *is* the MCP endpoint, on the same origin as the OAuth routes.
     # Normalize through AnyHttpUrl so the token audience matches the trailing
@@ -105,6 +107,7 @@ def create_app(settings: Settings) -> Starlette:
             yield
         finally:
             await nutrition.aclose()
+            await telegram.aclose()
             db.close()
 
     mcp = FastMCP(
@@ -120,7 +123,10 @@ def create_app(settings: Settings) -> Starlette:
             "by default). For anything spanning more than today — 'calories last "
             "week', monthly averages, trends — call `intake_history`, which "
             "returns per-day totals and averages for a window of days. "
-            "To correct or remove a meal, call `list_meals` to get its number, "
+            "If a `send_daily_report` tool is present, this server is wired to an "
+            "accountability partner's Telegram chat: call it when the user wants "
+            "to send their day's report, and offer it once the day's eating is "
+            "done. To correct or remove a meal, call `list_meals` to get its number, "
             "then `delete_food` (or re-log with that number and overwrite=True). Meal "
             "numbers are internal bookkeeping: never guess one, and never ask the "
             "user to look one up — when they say 'the burger' or 'the second "
@@ -382,6 +388,29 @@ def create_app(settings: Settings) -> Starlette:
         goals = current.model_copy(update=update)
         db.save_goals(username, goals)
         return goals
+
+    # --- accountability reporting (only when Telegram is configured) --------
+
+    if telegram.configured:
+
+        @mcp.tool(title="Send daily report")
+        async def send_daily_report(day: date | None = None) -> str:
+            """Send the day's report — meals, totals against the targets, and the
+            latest weight — to the accountability partner's Telegram chat. Defaults
+            to today; pass `day` (YYYY-MM-DD) to report a past day. Call this when
+            the user asks to send/share their daily report with their partner, and
+            offer it at the end of the day once eating is done."""
+            username = current_username()
+            d = day or date.today()
+            weights = db.weight_series(username, limit=1)
+            text = format_daily_report(
+                username,
+                db.day_food_logs(username, d),
+                current_progress(username, d),
+                weights[-1] if weights else None,
+            )
+            await telegram.send(text)
+            return f"Sent to the accountability partner:\n\n{text}"
 
     # --- account management (admin only) ------------------------------------
 

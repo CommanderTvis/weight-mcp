@@ -32,6 +32,7 @@ registers further accounts from chat — each user sees only their own data. See
 | `intake_history` | Per-day totals and averages over a window of days ("calories last week", monthly trends). |
 | `set_goals` | Change the daily calorie/protein targets and floor/ceiling mode; optionally set a fiber norm (off by default, `fiber_target_g=0` removes it). |
 | `show_dashboard` | Renders the dashboard inline as an MCP Apps panel (weight graph + recent meals + today's progress). |
+| `send_daily_report` | Sends the day's meals, totals, and latest weight to your accountability partner on Telegram. Only present when the Telegram env vars are set. |
 
 All of the above operate on the calling account's own data. The admin account
 additionally gets user management:
@@ -55,6 +56,13 @@ the database). Two modes: `floor` (eat *at least* the target — the default, fo
 under-eaters) and `ceiling` (stay under — for weight loss). Until you set your
 own, the default is 2600 kcal / 150 g protein, floor. Goals are per account,
 like all other data.
+
+Accountability reporting is optional: set `WEIGHT_MCP_TELEGRAM_BOT_TOKEN` (a bot
+from [@BotFather](https://t.me/BotFather)) and `WEIGHT_MCP_TELEGRAM_CHAT_ID`
+(your partner's chat — a human, group, or channel; numeric ID or
+`@channelusername`) to enable `send_daily_report`. The bot must be able to
+message that chat: the partner has to start the bot once (humans), or the bot
+must be a member/admin (groups/channels).
 
 ## Run
 

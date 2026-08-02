@@ -58,6 +58,14 @@ class Settings(BaseSettings):
     usda_enabled: bool = False
     usda_api_key: str | None = None
 
+    # --- telegram reporting ---------------------------------------------------
+    # Optional: when both are set, the `send_daily_report` tool sends the day's
+    # summary to an accountability partner via this bot. The chat ID may be a
+    # human, group, or channel: a numeric ID (negative for groups/channels) or
+    # "@channelusername" for public channels.
+    telegram_bot_token: str | None = None
+    telegram_chat_id: str | None = None
+
     @property
     def issuer(self) -> str:
         """OAuth issuer / resource identifier (the public base URL, no slash)."""
