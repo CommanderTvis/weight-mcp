@@ -35,6 +35,14 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+# Debian ships security fixes faster than the upstream python image is rebuilt,
+# so patch the pinned base rather than wait for a new digest. This is the one
+# deliberately non-reproducible layer: the digest above fixes what we start
+# from, this keeps what we ship current.
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --no-create-home --home-dir /app app
 
