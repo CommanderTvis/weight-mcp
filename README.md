@@ -80,9 +80,21 @@ Docker (local build):
 docker compose up --build
 ```
 
+This publishes the server on `127.0.0.1:8000` only. It speaks plain HTTP and its
+login endpoint takes the admin password — which is also the JWT signing root —
+so never map it to a public interface; TLS termination belongs in front of it.
+On a Linux host, give the container (uid 10001) the data directory first:
+`sudo chown 10001:10001 data`.
+
 For a real deployment you need public HTTPS (claude.ai connects from Anthropic's
 cloud, not your device). Copy `docker-compose.template.yml`, put the server
 behind a TLS reverse proxy, and set `WEIGHT_MCP_PUBLIC_BASE_URL` to that origin.
+Pin `image:` to a digest rather than `:latest` so a redeploy cannot silently
+pull different code.
+
+The compose files pass `.env` as process environment, which makes the admin
+password readable through `docker inspect` and `/proc/1/environ`. Keep the file
+`chmod 600` and treat host access as equivalent to knowing the password.
 
 ## Add to claude.ai
 

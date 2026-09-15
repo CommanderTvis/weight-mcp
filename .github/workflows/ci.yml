@@ -5,16 +5,17 @@ on:
     branches: [main]
   pull_request:
 
+# Actions are pinned to commit SHAs: a tag like @v4 is mutable, and this
+# workflow holds a token that can publish to the registry.
 permissions:
   contents: read
-  packages: write
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
           enable-cache: true
       - run: uv sync --frozen
@@ -30,31 +31,61 @@ jobs:
   docker:
     needs: lint
     runs-on: ubuntu-latest
+    # Only this job may write packages; `lint` runs untrusted PR code and must
+    # not hold a registry-write token.
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - name: Log in to GHCR
-        if: github.event_name == 'push'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=ref,event=branch
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}
-      - name: Build (and push on main)
-        uses: docker/build-push-action@v6
+
+      # Build into the local daemon first so the image can be scanned before it
+      # is ever published.
+      - name: Build for scanning
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
-          push: ${{ github.event_name == 'push' }}
+          load: true
+          tags: weight-mcp:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: weight-mcp:ci
+          severity: HIGH,CRITICAL
+          # Fail only on vulnerabilities that a base-image bump can actually
+          # fix, so unpatched upstream CVEs cannot wedge the pipeline.
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push (main only)
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Publish a signed build record and an SBOM alongside the image, so a
+          # consumer can verify where it came from and what is inside it.
+          provenance: mode=max
+          sbom: true

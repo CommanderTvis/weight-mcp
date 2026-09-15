@@ -3,23 +3,44 @@
 # claude.ai connects from Anthropic's cloud over public HTTPS, so this server
 # MUST sit behind a TLS-terminating reverse proxy (Caddy / Traefik / nginx) with
 # a real certificate. WEIGHT_MCP_PUBLIC_BASE_URL must equal that public origin.
+#
+# Pin the image to a digest rather than a moving tag so a redeploy can never
+# silently pull different code:
+#   image: ghcr.io/commandertvis/weight-mcp@sha256:<digest>
 services:
   weight-mcp:
     image: ghcr.io/commandertvis/weight-mcp:latest
     restart: unless-stopped
+    # .env values become process environment, so they are visible in
+    # `docker inspect` and /proc/1/environ to anyone with host access. Keep the
+    # file 0600 and treat host access as equivalent to knowing the password.
     env_file: .env
+    # Never map this to a host port: the only path in is through the proxy.
     expose:
       - "8000"
+    # A named volume, so /app/data keeps the image's app-user ownership and the
+    # container can write SQLite without running as root.
     volumes:
       - weight-data:/app/data
-    # Example: join the network your reverse proxy lives on.
-    # networks: [edge]
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 256
+    networks: [edge]
 
   # Minimal example TLS terminator. Replace with your own proxy if you have one.
   caddy:
     image: caddy:2
     restart: unless-stopped
-    depends_on: [weight-mcp]
+    # The image's HEALTHCHECK gates this, so the proxy never advertises a
+    # backend that has not finished starting.
+    depends_on:
+      weight-mcp:
+        condition: service_healthy
     ports:
       - "443:443"
       - "80:80"
@@ -27,11 +48,17 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
+    networks: [edge]
 
 # Example Caddyfile (next to this file):
 #   weight.example.com {
 #       reverse_proxy weight-mcp:8000
 #   }
+
+networks:
+  edge:
 
 volumes:
   weight-data:

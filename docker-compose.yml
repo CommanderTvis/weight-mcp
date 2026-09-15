@@ -5,8 +5,26 @@ services:
   weight-mcp:
     build: .
     restart: unless-stopped
+    # .env values become process environment, so they are visible in
+    # `docker inspect` and /proc/1/environ to anyone with host access. Keep the
+    # file 0600 and treat host access as equivalent to knowing the password.
     env_file: .env
+    # Loopback only. The server speaks plain HTTP and its login endpoint takes
+    # the admin password — which is also the JWT signing root — so it must never
+    # be reachable from outside the host. Public deployments terminate TLS in
+    # front of it; see docker-compose.template.yml.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    # On a Linux host the container (uid 10001) must be able to write here:
+    #   sudo chown 10001:10001 data
+    # Docker Desktop remaps bind-mount ownership, so macOS needs nothing.
     volumes:
       - ./data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    pids_limit: 256
