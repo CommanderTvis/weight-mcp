@@ -1,0 +1,12 @@
+# Everything is excluded by default; the Dockerfile opts in to what it needs.
+# This keeps secrets (.env) and real user data (data/) out of the build context
+# entirely, so no future COPY can leak them into a published layer.
+*
+
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+
+src/**/__pycache__/
+src/**/*.py[cod]
