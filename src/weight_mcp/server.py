@@ -138,6 +138,9 @@ def create_app(settings: Settings) -> Starlette:
                 default_scopes=[SCOPE],
             ),
             required_scopes=[SCOPE],
+            # The provider already pins the audience when decoding; having the
+            # framework check it too costs nothing and is the 3.0 default.
+            validate_token_resource=True,
         ),
     )
 
