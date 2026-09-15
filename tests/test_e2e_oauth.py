@@ -408,3 +408,19 @@ def test_reusing_a_meal_number_needs_overwrite(client: TestClient) -> None:
         },
     )
     assert admin.call_tool("daily_progress", {})["structuredContent"]["kcal"] == 1400
+
+
+def test_session_cleanup_does_not_close_database(client: TestClient) -> None:
+    # Terminating one MCP session must not close the app-level database or HTTP clients
+    # for subsequent sessions.
+    token = _obtain_token(client, ADMIN, PASSWORD)
+    s1 = McpSession(client, token)
+    res1 = s1.call_tool("log_food", {"name": "apple", "kcal": 50, "protein_g": 0})
+    assert not res1.get("isError"), _text(res1)
+
+    del_resp = client.delete("/", headers=s1.headers)
+    assert del_resp.status_code == 200
+
+    s2 = McpSession(client, token)
+    res2 = s2.call_tool("log_food", {"name": "banana", "kcal": 100, "protein_g": 1})
+    assert not res2.get("isError"), _text(res2)
