@@ -101,15 +101,6 @@ def create_app(settings: Settings) -> Starlette:
         db=db,
     )
 
-    @asynccontextmanager
-    async def lifespan(_server: FastMCP) -> AsyncIterator[None]:
-        try:
-            yield
-        finally:
-            await nutrition.aclose()
-            await telegram.aclose()
-            db.close()
-
     mcp = FastMCP(
         "weight-mcp",
         instructions=(
@@ -148,7 +139,6 @@ def create_app(settings: Settings) -> Starlette:
             ),
             required_scopes=[SCOPE],
         ),
-        lifespan=lifespan,
     )
 
     def current_username() -> str:
@@ -581,4 +571,17 @@ def create_app(settings: Settings) -> Starlette:
             )
         return HTMLResponse(login_page(DASHBOARD_PATH, subtitle=subtitle))
 
-    return mcp.streamable_http_app()
+    app = mcp.streamable_http_app()
+
+    @asynccontextmanager
+    async def app_lifespan(starlette_app: Starlette) -> AsyncIterator[None]:
+        async with mcp.session_manager.run():
+            try:
+                yield
+            finally:
+                await nutrition.aclose()
+                await telegram.aclose()
+                db.close()
+
+    app.router.lifespan_context = app_lifespan
+    return app
