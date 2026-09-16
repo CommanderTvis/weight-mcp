@@ -152,4 +152,3 @@ def test_recently_eaten_grouped_by_days() -> None:
     assert "20:00</span></li>" in html
     assert "18:30</span></li>" in html
     assert "Sat 13:00" not in html
-
