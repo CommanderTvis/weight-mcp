@@ -6,6 +6,7 @@ dependency is the app-bridge script (so the host completes the handshake and
 sizes the iframe); the plain web page omits even that.
 """
 
+from datetime import date, timedelta
 from html import escape
 
 from .models import FoodLog, Progress, WeightEntry
@@ -33,6 +34,9 @@ body {
 h1 { font-size: 18px; margin: 0 0 16px; }
 h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em;
      color: #9aa3ad; margin: 24px 0 8px; }
+h3 { font-size: 13px; font-weight: 600; color: #c9d1d9; margin: 0 0 6px; }
+.day-group { margin-top: 16px; }
+.day-group:first-child { margin-top: 4px; }
 .cards { display: flex; gap: 12px; flex-wrap: wrap; }
 .card { background: #181b21; border: 1px solid #262a31; border-radius: 12px;
         padding: 14px 16px; flex: 1 1 180px; }
@@ -111,20 +115,50 @@ def _weight_svg(weights: list[WeightEntry]) -> str:
     )
 
 
-def _meals_html(logs: list[FoodLog]) -> str:
+def _day_label(day: date, today: date | None = None) -> str:
+    weekday = day.strftime("%A")
+    month = day.strftime("%b")
+    ref_year = today.year if today else date.today().year
+    year_suffix = f", {day.year}" if day.year != ref_year else ""
+    date_str = f"{weekday}, {month} {day.day}{year_suffix}"
+    if today is not None:
+        if day == today:
+            return f"Today — {date_str}"
+        if day == today - timedelta(days=1):
+            return f"Yesterday — {date_str}"
+    return date_str
+
+
+def _meals_html(logs: list[FoodLog], today: date | None = None) -> str:
     if not logs:
         return '<p class="empty">Nothing logged yet.</p>'
-    items = []
+    groups: dict[date, list[FoodLog]] = {}
     for log in logs:
-        when = log.eaten_at.strftime("%a %H:%M")
-        qty = f"{log.quantity_g:.0f} g · " if log.quantity_g else ""
-        num = f"#{log.meal_number} " if log.meal_number is not None else ""
-        items.append(
-            f'<li><span class="meal-name">{num}{escape(log.name)}</span>'
-            f'<span class="meal-meta">{qty}{log.kcal:.0f} kcal · '
-            f"{log.protein_g:.0f} g protein · {when}</span></li>"
+        groups.setdefault(log.eaten_at.date(), []).append(log)
+
+    sections = []
+    for day in sorted(groups.keys(), reverse=True):
+        title = _day_label(day, today)
+        day_logs = sorted(
+            groups[day], key=lambda log: (log.eaten_at, log.meal_number or 0), reverse=True
         )
-    return f'<ul class="meals">{"".join(items)}</ul>'
+        items = []
+        for log in day_logs:
+            when = log.eaten_at.strftime("%H:%M")
+            qty = f"{log.quantity_g:.0f} g · " if log.quantity_g else ""
+            num = f"#{log.meal_number} " if log.meal_number is not None else ""
+            items.append(
+                f'<li><span class="meal-name">{num}{escape(log.name)}</span>'
+                f'<span class="meal-meta">{qty}{log.kcal:.0f} kcal · '
+                f"{log.protein_g:.0f} g protein · {when}</span></li>"
+            )
+        sections.append(
+            f'<div class="day-group">'
+            f'<h3 class="day-title">{escape(title)}</h3>'
+            f'<ul class="meals">{"".join(items)}</ul>'
+            f"</div>"
+        )
+    return "".join(sections)
 
 
 # The MCP Apps bridge: connecting completes the ui/initialize handshake and turns
@@ -232,7 +266,7 @@ def render_dashboard(
 <h2>Weight</h2>
 {_weight_svg(weights)}
 <h2>Recently eaten</h2>
-{_meals_html(logs)}
+{_meals_html(logs, today=progress.day)}
 </main>
 {_REFRESH}
 {bridge}
