@@ -24,41 +24,71 @@ _FAVICON = (
 )
 
 _CSS = """
-:root { color-scheme: light dark; }
+:root {
+  color-scheme: light dark;
+  --background: #f6f8fa;
+  --text: #1f2328;
+  --muted: #59636e;
+  --heading: #3d444d;
+  --surface: #ffffff;
+  --border: #d1d9e0;
+  --accent: #0969da;
+  --success: #1a7f37;
+  --subtle: #e8ecf0;
+  --empty: #656d76;
+  --control-border: #b7c0ca;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0f1115;
+    --text: #e6e8eb;
+    --muted: #9aa3ad;
+    --heading: #c9d1d9;
+    --surface: #181b21;
+    --border: #262a31;
+    --accent: #4f9dff;
+    --success: #3fb950;
+    --subtle: #20242b;
+    --empty: #6b7280;
+    --control-border: #2d323b;
+  }
+}
 * { box-sizing: border-box; }
 body {
   margin: 0; padding: 20px; position: relative;
   font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  background: #0f1115; color: #e6e8eb;
+  background: var(--background); color: var(--text);
 }
 h1 { font-size: 18px; margin: 0 0 16px; }
 h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em;
-     color: #9aa3ad; margin: 24px 0 8px; }
-h3 { font-size: 13px; font-weight: 600; color: #c9d1d9; margin: 0 0 6px; }
+     color: var(--muted); margin: 24px 0 8px; }
+h3 { font-size: 13px; font-weight: 600; color: var(--heading); margin: 0 0 6px; }
 .day-group { margin-top: 16px; }
 .day-group:first-child { margin-top: 4px; }
 .cards { display: flex; gap: 12px; flex-wrap: wrap; }
-.card { background: #181b21; border: 1px solid #262a31; border-radius: 12px;
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
         padding: 14px 16px; flex: 1 1 180px; }
 .metric { font-size: 26px; font-weight: 600; }
-.metric small { font-size: 13px; font-weight: 400; color: #9aa3ad; }
-.bar { height: 8px; background: #262a31; border-radius: 999px; margin-top: 10px; overflow: hidden; }
-.bar > span { display: block; height: 100%; border-radius: 999px; background: #4f9dff; }
-.bar.met > span { background: #3fb950; }
-.goal { color: #9aa3ad; font-size: 12px; margin-top: 6px; }
+.metric small { font-size: 13px; font-weight: 400; color: var(--muted); }
+.bar { height: 8px; background: var(--border); border-radius: 999px;
+       margin-top: 10px; overflow: hidden; }
+.bar > span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.bar.met > span { background: var(--success); }
+.goal { color: var(--muted); font-size: 12px; margin-top: 6px; }
 svg { width: 100%; height: auto; display: block; }
-.chart { background: #181b21; border: 1px solid #262a31; border-radius: 12px; padding: 12px; }
+.chart { background: var(--surface); border: 1px solid var(--border);
+         border-radius: 12px; padding: 12px; }
 ul.meals { list-style: none; margin: 0; padding: 0; }
 ul.meals li { display: flex; justify-content: space-between; gap: 12px;
-  padding: 8px 0; border-bottom: 1px solid #20242b; }
+  padding: 8px 0; border-bottom: 1px solid var(--subtle); }
 ul.meals li:last-child { border-bottom: 0; }
-.meal-name { color: #e6e8eb; }
-.meal-meta { color: #9aa3ad; font-size: 13px; white-space: nowrap; }
-.empty { color: #6b7280; font-style: italic; }
+.meal-name { color: var(--text); }
+.meal-meta { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.empty { color: var(--empty); font-style: italic; }
 .refresh { position: absolute; top: 16px; right: 16px;
-  padding: 6px 12px; border: 1px solid #2d323b; border-radius: 8px;
-  background: #181b21; color: #e6e8eb; font: inherit; font-size: 13px; cursor: pointer; }
-.refresh:hover { background: #20242b; }
+  padding: 6px 12px; border: 1px solid var(--control-border); border-radius: 8px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.refresh:hover { background: var(--subtle); }
 .refresh:disabled { opacity: .5; cursor: default; }
 """
 
@@ -102,15 +132,15 @@ def _weight_svg(weights: list[WeightEntry]) -> str:
 
     points = " ".join(f"{x(i):.1f},{y(e.weight_kg):.1f}" for i, e in enumerate(weights))
     dots = "".join(
-        f'<circle cx="{x(i):.1f}" cy="{y(e.weight_kg):.1f}" r="2.5" fill="#4f9dff"/>'
+        f'<circle cx="{x(i):.1f}" cy="{y(e.weight_kg):.1f}" r="2.5" fill="var(--accent)"/>'
         for i, e in enumerate(weights)
     )
     return (
         f'<div class="chart"><svg viewBox="0 0 {w:.0f} {h:.0f}" '
         f'preserveAspectRatio="none" role="img" aria-label="Weight over time">'
-        f'<text x="{pad:.0f}" y="16" fill="#9aa3ad" font-size="11">{hi:.1f} kg</text>'
-        f'<text x="{pad:.0f}" y="{h - 8:.0f}" fill="#9aa3ad" font-size="11">{lo:.1f} kg</text>'
-        f'<polyline fill="none" stroke="#4f9dff" stroke-width="2" '
+        f'<text x="{pad:.0f}" y="16" fill="var(--muted)" font-size="11">{hi:.1f} kg</text>'
+        f'<text x="{pad:.0f}" y="{h - 8:.0f}" fill="var(--muted)" font-size="11">{lo:.1f} kg</text>'
+        f'<polyline fill="none" stroke="var(--accent)" stroke-width="2" '
         f'stroke-linejoin="round" points="{points}"/>{dots}</svg></div>'
     )
 
