@@ -548,6 +548,17 @@ def create_app(settings: Settings) -> Starlette:
         # The cookie names the account, so each user sees their own dashboard.
         cookie_user = provider.dashboard_cookie_user(request.cookies.get(DASHBOARD_COOKIE, ""))
         if cookie_user is not None:
+            if request.method == "POST":
+                form = await request.form()
+                try:
+                    meal_number = int(str(form.get("meal_number", "")))
+                    day = date.fromisoformat(str(form.get("day", "")))
+                except ValueError:
+                    return HTMLResponse("Invalid meal deletion request.", status_code=400)
+                if form.get("action") != "delete" or meal_number < 1:
+                    return HTMLResponse("Invalid meal deletion request.", status_code=400)
+                db.delete_food_log(cookie_user, meal_number, day=day)
+                return RedirectResponse(DASHBOARD_PATH, status_code=303)
             return HTMLResponse(dashboard_html(cookie_user))
 
         subtitle = "Sign in to view your dashboard."

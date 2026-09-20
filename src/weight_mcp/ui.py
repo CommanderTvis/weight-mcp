@@ -82,8 +82,13 @@ ul.meals { list-style: none; margin: 0; padding: 0; }
 ul.meals li { display: flex; justify-content: space-between; gap: 12px;
   padding: 8px 0; border-bottom: 1px solid var(--subtle); }
 ul.meals li:last-child { border-bottom: 0; }
-.meal-name { color: var(--text); }
+.meal-name { color: var(--text); flex: 1; }
 .meal-meta { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.delete-meal-form { margin: 0; }
+.delete-meal { padding: 3px 7px; border: 1px solid var(--control-border); border-radius: 6px;
+  background: var(--surface); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; }
+.delete-meal:hover { background: var(--subtle); }
+.delete-meal:disabled { opacity: .5; cursor: default; }
 .empty { color: var(--empty); font-style: italic; }
 .refresh { position: absolute; top: 16px; right: 16px;
   padding: 6px 12px; border: 1px solid var(--control-border); border-radius: 8px;
@@ -177,10 +182,20 @@ def _meals_html(logs: list[FoodLog], today: date | None = None) -> str:
             when = log.eaten_at.strftime("%H:%M")
             qty = f"{log.quantity_g:.0f} g · " if log.quantity_g else ""
             num = f"#{log.meal_number} " if log.meal_number is not None else ""
+            delete_form = ""
+            if log.meal_number is not None:
+                delete_form = (
+                    '<form class="delete-meal-form" method="post">'
+                    '<input type="hidden" name="action" value="delete">'
+                    f'<input type="hidden" name="meal_number" value="{log.meal_number}">'
+                    f'<input type="hidden" name="day" value="{log.eaten_at.date().isoformat()}">'
+                    f'<button class="delete-meal" type="submit" aria-label="Delete '
+                    f'{escape(log.name)}">Delete</button></form>'
+                )
             items.append(
                 f'<li><span class="meal-name">{num}{escape(log.name)}</span>'
                 f'<span class="meal-meta">{qty}{log.kcal:.0f} kcal · '
-                f"{log.protein_g:.0f} g protein · {when}</span></li>"
+                f"{log.protein_g:.0f} g protein · {when}</span>{delete_form}</li>"
             )
         sections.append(
             f'<div class="day-group">'
@@ -246,6 +261,31 @@ _REFRESH = f"""
     try {{ await window.__wmRefresh(); }}
     catch (err) {{ /* leave the current view in place */ }}
     finally {{ btn.disabled = false; }}
+  }});
+  document.addEventListener("submit", async (e) => {{
+    const form = e.target;
+    if (!form.matches(".delete-meal-form")) return;
+    e.preventDefault();
+    if (!window.confirm("Delete this meal?")) return;
+    const btn = form.querySelector("button");
+    btn.disabled = true;
+    try {{
+      const data = new FormData(form);
+      if (window.__wmApp) {{
+        await window.__wmApp.callServerTool({{
+          name: "delete_food",
+          arguments: {{ meal_number: Number(data.get("meal_number")), day: data.get("day") }},
+        }});
+      }} else {{
+        const response = await fetch(location.href, {{
+          method: "POST", body: data, credentials: "same-origin",
+        }});
+        if (!response.ok) throw new Error("Could not delete meal");
+      }}
+      await window.__wmRefresh();
+    }} catch (err) {{
+      btn.disabled = false;
+    }}
   }});
 </script>"""
 

@@ -26,6 +26,7 @@ def test_render_includes_data_and_escapes_names() -> None:
         FoodLog(
             id=1,
             eaten_at=datetime(2026, 1, 1, 12, 0),
+            meal_number=1,
             name="<b>Brötchen</b>",
             quantity_g=80,
             kcal=210,
@@ -40,6 +41,10 @@ def test_render_includes_data_and_escapes_names() -> None:
     assert "2600 kcal" in html
     assert "&lt;b&gt;Br" in html  # meal name HTML-escaped
     assert "<b>Br" not in html
+    assert 'class="delete-meal"' in html
+    assert 'name="meal_number" value="1"' in html
+    assert 'name="day" value="2026-01-01"' in html
+    assert "callServerTool" in html
 
 
 def test_fiber_card_only_when_norm_is_set() -> None:
@@ -147,8 +152,8 @@ def test_recently_eaten_grouped_by_days() -> None:
     assert idx_chicken < idx_oats < idx_steak < idx_salmon
 
     # Check time format is HH:MM without redundant weekday
-    assert "13:00</span></li>" in html
-    assert "09:30</span></li>" in html
-    assert "20:00</span></li>" in html
-    assert "18:30</span></li>" in html
+    assert "13:00</span><form" in html
+    assert "09:30</span><form" in html
+    assert "20:00</span><form" in html
+    assert "18:30</span><form" in html
     assert "Sat 13:00" not in html

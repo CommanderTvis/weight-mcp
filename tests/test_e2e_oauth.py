@@ -276,6 +276,37 @@ def test_dashboard_cookie_gate(client: TestClient, settings: Settings) -> None:
     assert "Today" in page.text
 
 
+def test_dashboard_deletes_a_meal_for_the_cookie_user(
+    client: TestClient, settings: Settings
+) -> None:
+    from weight_mcp.db import Database
+    from weight_mcp.oauth import PasswordOAuthProvider
+    from weight_mcp.server import DASHBOARD_COOKIE
+
+    db = Database(settings.database_path)
+    entry = db.add_food_log(ADMIN, name="Oats", kcal=300, protein_g=10)
+    assert entry.meal_number is not None
+    provider = PasswordOAuthProvider(
+        admin_password=settings.password,
+        resource_url=RESOURCE,
+        login_path="/login",
+        db=db,
+    )
+    response = client.post(
+        "/dashboard",
+        data={
+            "action": "delete",
+            "meal_number": str(entry.meal_number),
+            "day": date.today().isoformat(),
+        },
+        headers={"Cookie": f"{DASHBOARD_COOKIE}={provider.dashboard_cookie(ADMIN)}"},
+    )
+
+    assert response.status_code == 303
+    assert db.day_food_logs(ADMIN, date.today()) == []
+    db.close()
+
+
 def test_garbage_token_is_rejected(client: TestClient) -> None:
     resp = client.post(
         "/",
