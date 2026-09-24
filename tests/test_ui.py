@@ -157,3 +157,27 @@ def test_recently_eaten_grouped_by_days() -> None:
     assert "20:00</span><form" in html
     assert "18:30</span><form" in html
     assert "Sat 13:00" not in html
+
+
+def test_switcher_and_read_only_view() -> None:
+    log = FoodLog(
+        id=1,
+        eaten_at=datetime(2026, 1, 1, 12, 0),
+        meal_number=1,
+        name="Oats",
+        quantity_g=None,
+        kcal=300,
+        protein_g=10,
+        carbs_g=None,
+        fat_g=None,
+        source="manual",
+    )
+    assert "?user=" not in render_dashboard([], [log], _progress())
+
+    own = render_dashboard([], [log], _progress(), users=["admin", "alice"])
+    assert 'href="?user=alice"' in own
+    assert '<form class="delete-meal-form"' in own
+
+    other = render_dashboard([], [log], _progress(), users=["admin", "alice"], viewing="alice")
+    assert "alice" in other
+    assert '<form class="delete-meal-form"' not in other

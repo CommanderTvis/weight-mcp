@@ -6,6 +6,7 @@ dependency is the app-bridge script (so the host completes the handshake and
 sizes the iframe); the plain web page omits even that.
 """
 
+from collections.abc import Sequence
 from datetime import date, timedelta
 from html import escape
 
@@ -90,6 +91,10 @@ ul.meals li:last-child { border-bottom: 0; }
 .delete-meal:hover { background: var(--subtle); }
 .delete-meal:disabled { opacity: .5; cursor: default; }
 .empty { color: var(--empty); font-style: italic; }
+.user-switcher { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 16px; padding-right: 110px; }
+.user-switcher a { padding: 3px 10px; border: 1px solid var(--control-border); border-radius: 999px;
+  color: var(--text); text-decoration: none; font-size: 13px; }
+.user-switcher a[aria-current] { border-color: var(--accent); color: var(--accent); }
 .refresh { position: absolute; top: 16px; right: 16px;
   padding: 6px 12px; border: 1px solid var(--control-border); border-radius: 8px;
   background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
@@ -164,7 +169,7 @@ def _day_label(day: date, today: date | None = None) -> str:
     return date_str
 
 
-def _meals_html(logs: list[FoodLog], today: date | None = None) -> str:
+def _meals_html(logs: list[FoodLog], today: date | None = None, *, read_only: bool = False) -> str:
     if not logs:
         return '<p class="empty">Nothing logged yet.</p>'
     groups: dict[date, list[FoodLog]] = {}
@@ -183,7 +188,7 @@ def _meals_html(logs: list[FoodLog], today: date | None = None) -> str:
             qty = f"{log.quantity_g:.0f} g · " if log.quantity_g else ""
             num = f"#{log.meal_number} " if log.meal_number is not None else ""
             delete_form = ""
-            if log.meal_number is not None:
+            if log.meal_number is not None and not read_only:
                 delete_form = (
                     '<form class="delete-meal-form" method="post">'
                     '<input type="hidden" name="action" value="delete">'
@@ -296,7 +301,23 @@ def render_dashboard(
     progress: Progress,
     *,
     embed_app_bridge: bool = False,
+    users: Sequence[str] = (),
+    viewing: str | None = None,
 ) -> str:
+    """``users`` renders the admin's switcher (the viewer first); ``viewing``
+    names another user whose dashboard this is, shown read-only."""
+    switcher = ""
+    if users:
+        current = viewing or users[0]
+        links = "".join(
+            f'<a href="?user={escape(u)}"'
+            f"{' aria-current="page"' if u == current else ''}>{escape(u)}</a>"
+            for u in users
+        )
+        switcher = f'<nav class="user-switcher" aria-label="Users">{links}</nav>'
+    heading = f"Today — {progress.day.isoformat()}"
+    if viewing:
+        heading = f"{escape(viewing)} · {heading}"
     goal_word = "min" if progress.goal_mode == "floor" else "max"
     above = progress.goal_mode == "floor"
     bridge = _APP_BRIDGE if embed_app_bridge else ""
@@ -331,12 +352,13 @@ def render_dashboard(
 <body>
 <button class="refresh" type="button" aria-label="Refresh dashboard">↻ Refresh</button>
 <main id="board">
-<h1>Today — {progress.day.isoformat()}</h1>
+{switcher}
+<h1>{heading}</h1>
 <div class="cards">{kcal_card}{protein_card}{fiber_card}</div>
 <h2>Weight</h2>
 {_weight_svg(weights)}
 <h2>Recently eaten</h2>
-{_meals_html(logs, today=progress.day)}
+{_meals_html(logs, today=progress.day, read_only=viewing is not None)}
 </main>
 {_REFRESH}
 {bridge}

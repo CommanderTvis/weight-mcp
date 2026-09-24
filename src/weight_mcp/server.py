@@ -8,13 +8,15 @@ and the dashboard UI.
 Multi-user: every request is authenticated as a username (the OAuth token's
 ``sub``), and every tool reads/writes only that user's rows. The admin account
 (``admin``, password from ``.env``) additionally gets account-management tools
-to register, deregister, and reset passwords of DB-backed non-admin users.
+to register, deregister, and reset passwords of DB-backed non-admin users, and
+can view any user's web dashboard read-only.
 """
 
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
+from html import escape
 
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
@@ -180,12 +182,20 @@ def create_app(settings: Settings) -> Starlette:
             line += f", {p.fiber_g:.0f}/{p.fiber_target_g} g fiber"
         return line
 
-    def dashboard_html(username: str, *, embed_app_bridge: bool = False) -> str:
+    def dashboard_html(
+        username: str,
+        *,
+        embed_app_bridge: bool = False,
+        users: list[str] | None = None,
+        viewing: str | None = None,
+    ) -> str:
         return render_dashboard(
             db.weight_series(username, limit=180),
             db.recent_food_logs(username, limit=20),
             current_progress(username),
             embed_app_bridge=embed_app_bridge,
+            users=users or [],
+            viewing=viewing,
         )
 
     # --- prompt -------------------------------------------------------------
@@ -545,7 +555,8 @@ def create_app(settings: Settings) -> Starlette:
     async def dashboard(request: Request) -> Response:
         # A stable, tokenless URL the model can reproduce verbatim. Access is
         # gated by a password-backed cookie set on first visit, not a URL token.
-        # The cookie names the account, so each user sees their own dashboard.
+        # The cookie names the account, so each user sees their own dashboard;
+        # the admin can view others' read-only via ?user=.
         cookie_user = provider.dashboard_cookie_user(request.cookies.get(DASHBOARD_COOKIE, ""))
         if cookie_user is not None:
             if request.method == "POST":
@@ -559,7 +570,18 @@ def create_app(settings: Settings) -> Starlette:
                     return HTMLResponse("Invalid meal deletion request.", status_code=400)
                 db.delete_food_log(cookie_user, meal_number, day=day)
                 return RedirectResponse(DASHBOARD_PATH, status_code=303)
-            return HTMLResponse(dashboard_html(cookie_user))
+            if cookie_user != ADMIN_USERNAME:
+                if request.query_params.get("user", cookie_user) != cookie_user:
+                    return HTMLResponse(
+                        "Only the admin account can view other dashboards.", status_code=403
+                    )
+                return HTMLResponse(dashboard_html(cookie_user))
+            users = [ADMIN_USERNAME, *db.list_users()]
+            username = request.query_params.get("user", cookie_user)
+            if username not in users:
+                return HTMLResponse(f"No user '{escape(username)}'.", status_code=404)
+            viewing = username if username != cookie_user else None
+            return HTMLResponse(dashboard_html(username, users=users, viewing=viewing))
 
         subtitle = "Sign in to view your dashboard."
         if request.method == "POST":

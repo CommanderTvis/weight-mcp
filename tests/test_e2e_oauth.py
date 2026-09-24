@@ -307,6 +307,66 @@ def test_dashboard_deletes_a_meal_for_the_cookie_user(
     db.close()
 
 
+def test_admin_views_other_dashboards_read_only(client: TestClient, settings: Settings) -> None:
+    from weight_mcp.db import Database
+    from weight_mcp.oauth import PasswordOAuthProvider
+    from weight_mcp.server import DASHBOARD_COOKIE
+
+    db = Database(settings.database_path)
+    db.create_user("alice", "unused-hash")
+    db.add_food_log("alice", name="Alice oats", kcal=300, protein_g=10)
+    db.add_food_log(ADMIN, name="Admin toast", kcal=200, protein_g=5)
+    provider = PasswordOAuthProvider(
+        admin_password=settings.password,
+        resource_url=RESOURCE,
+        login_path="/login",
+        db=db,
+    )
+
+    def get(viewer: str, query: str) -> Any:
+        return client.get(
+            f"/dashboard{query}",
+            headers={"Cookie": f"{DASHBOARD_COOKIE}={provider.dashboard_cookie(viewer)}"},
+        )
+
+    own = get(ADMIN, "")
+    assert "Admin toast" in own.text
+    assert 'href="?user=alice"' in own.text  # the admin gets a user switcher
+
+    other = get(ADMIN, "?user=alice")
+    assert other.status_code == 200
+    assert "Alice oats" in other.text
+    assert "Admin toast" not in other.text
+    assert '<form class="delete-meal-form"' not in other.text  # read-only
+
+    assert get(ADMIN, "?user=nobody").status_code == 404
+    denied = get("alice", "?user=admin")
+    assert denied.status_code == 403
+    assert "Admin toast" not in denied.text
+    mine = get("alice", "")
+    assert "Alice oats" in mine.text
+    assert "?user=" not in mine.text  # no switcher for regular users
+    db.close()
+
+
+def test_admin_panel_has_no_user_switcher(client: TestClient) -> None:
+    admin = McpSession(client, _obtain_token(client, ADMIN, PASSWORD))
+    admin.call_tool("register_user", {"username": "alice", "password": "alice-pw-123"})
+    assert admin.call_tool("show_dashboard", {})  # session is live
+    resp = client.post(
+        "/",
+        headers=admin.headers,
+        json={
+            "jsonrpc": "2.0",
+            "id": 99,
+            "method": "resources/read",
+            "params": {"uri": "ui://weight-mcp/dashboard"},
+        },
+    )
+    assert "Today" in resp.text
+    assert "?user=" not in resp.text
+
+
 def test_garbage_token_is_rejected(client: TestClient) -> None:
     resp = client.post(
         "/",

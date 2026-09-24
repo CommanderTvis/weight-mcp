@@ -53,7 +53,9 @@ burden.
   flow that claude.ai expects when adding an MCP server; the human-facing step
   is a username + password form.
 - **Per-user data.** Every row (weights, food logs, goals) is scoped to the
-  authenticated account (the token's `sub`); tools never cross accounts.
+  authenticated account (the token's `sub`); tools never cross accounts. The
+  one exception: the admin's web dashboard (`/dashboard`) has a user switcher
+  to view any account's dashboard, read-only.
 - **Revocation without token state.** Tokens are stateless JWTs signed with a
   key derived from the admin password and stamped with a digest of the user's
   current password. Updating a user's password (or deregistering them)
