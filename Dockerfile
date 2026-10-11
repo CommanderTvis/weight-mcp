@@ -5,7 +5,9 @@
 # To bump, replace both the tag and its digest.
 
 # --- build stage: uv and the build toolchain, never shipped ------------------
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58 AS builder
+FROM python:3.13-slim-trixie@sha256:70729b46c69b4f1e97c4822c1af3df53a1476cf5ddc6c087c0c10bc3a5678c2f AS builder
+
+COPY --from=ghcr.io/astral-sh/uv:python3.12-bookworm-slim@sha256:e5b65587bce7de595f299855d7385fe7fca39b8a74baa261ba1b7147afa78e58 /usr/local/bin/uv /usr/local/bin/uv
 
 WORKDIR /app
 
@@ -26,8 +28,16 @@ COPY README.md ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
 
-# --- runtime stage: interpreter and the venv, nothing else ------------------
-FROM python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
+# Distroless uses /usr/bin rather than the builder's /usr/local/bin.
+# Point the venv at the runtime interpreter, keeping the same Python ABI.
+RUN sed -i 's|/usr/local/bin|/usr/bin|g' /app/.venv/pyvenv.cfg \
+    && ln -sf /usr/bin/python3.13 /app/.venv/bin/python \
+    && ln -sf python /app/.venv/bin/python3 \
+    && ln -sf python /app/.venv/bin/python3.13 \
+    && install -d -o 10001 -g 10001 -m 750 /runtime-data
+
+# --- runtime stage: no shell or package manager ----------------------------
+FROM gcr.io/distroless/python3-debian13:nonroot@sha256:83aa8d4f74a4d7f7cf2d472054139bef71a927b76c680c0f2e1021d6b1d6d732
 
 WORKDIR /app
 
@@ -35,26 +45,15 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Debian ships security fixes faster than the upstream python image is rebuilt,
-# so patch the pinned base rather than wait for a new digest. This is the one
-# deliberately non-reproducible layer: the digest above fixes what we start
-# from, this keeps what we ship current.
-RUN apt-get update \
-    && apt-get upgrade -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN groupadd --system --gid 10001 app \
-    && useradd --system --uid 10001 --gid app --no-create-home --home-dir /app app
-
 # The venv stays root-owned and read-only to the app user, so a compromised
 # process cannot rewrite its own code.
 COPY --from=builder --chown=root:root /app/.venv /app/.venv
 
 # Owned by the app user so a fresh named volume mounted here inherits that
 # ownership and SQLite can write without the container running as root.
-RUN install -d -o app -g app -m 750 /app/data
+COPY --from=builder --chown=10001:10001 /runtime-data /app/data
 
-USER app
+USER 10001:10001
 
 EXPOSE 8000
 VOLUME ["/app/data"]
@@ -64,4 +63,5 @@ VOLUME ["/app/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD ["python", "-c", "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/.well-known/oauth-protected-resource' % os.environ.get('WEIGHT_MCP_PORT', '8000'), timeout=4).read()"]
 
-CMD ["weight-mcp"]
+ENTRYPOINT ["/app/.venv/bin/python"]
+CMD ["-m", "weight_mcp"]

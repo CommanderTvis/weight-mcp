@@ -59,6 +59,35 @@ jobs:
           tags: weight-mcp:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Runtime smoke test
+        run: |
+          docker run --rm --read-only --tmpfs /tmp --entrypoint /app/.venv/bin/python weight-mcp:ci -c '
+          import importlib.util, os, shutil, sqlite3, ssl, subprocess, sys, tempfile, time, urllib.request
+          assert os.getuid() == 10001
+          assert all(shutil.which(name) is None for name in ("sh", "bash", "apt", "apt-get", "dpkg", "apk", "pip", "uv"))
+          assert importlib.util.find_spec("pip") is None
+          assert ssl.create_default_context().get_ca_certs()
+          with tempfile.TemporaryDirectory() as directory:
+              database = directory + "/weight.sqlite3"
+              env = dict(os.environ, WEIGHT_MCP_PASSWORD="runtime-smoke", WEIGHT_MCP_DATABASE_PATH=database)
+              process = subprocess.Popen([sys.executable, "-m", "weight_mcp"], env=env)
+              try:
+                  for attempt in range(100):
+                      assert process.poll() is None, "server exited before becoming healthy"
+                      try:
+                          urllib.request.urlopen("http://127.0.0.1:8000/.well-known/oauth-protected-resource", timeout=1).read()
+                          break
+                      except OSError:
+                          time.sleep(0.1)
+                  else:
+                      raise AssertionError("server did not become healthy")
+                  with sqlite3.connect(database) as connection:
+                      assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+                      assert connection.execute("SELECT count(*) FROM sqlite_master WHERE type = ?", ("table",)).fetchone()[0] > 0
+              finally:
+                  process.terminate()
+                  process.wait(timeout=5)
+          '
       - name: Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

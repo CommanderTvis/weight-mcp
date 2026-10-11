@@ -80,6 +80,10 @@ Docker (local build):
 docker compose up --build
 ```
 
+The runtime image uses distroless Python 3.13 and contains no shell or package
+manager. Dependencies are installed in a separate build stage; base images are
+pinned by digest and security updates require rebuilding with updated pins.
+
 This publishes the server on `127.0.0.1:8000` only. It speaks plain HTTP and its
 login endpoint takes the admin password — which is also the JWT signing root —
 so never map it to a public interface; TLS termination belongs in front of it.
