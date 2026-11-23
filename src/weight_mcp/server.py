@@ -25,7 +25,7 @@ from mcp.types import ToolAnnotations
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, RedirectResponse, Response
+from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from .config import GoalMode, Settings
 from .db import Database, hash_password
@@ -34,11 +34,13 @@ from .nutrition import NutritionLookup
 from .oauth import ADMIN_USERNAME, DASHBOARD_COOKIE_TTL, SCOPE, PasswordOAuthProvider
 from .telegram import TelegramReporter, format_daily_report
 from .ui import APP_BRIDGE_ORIGIN, DASHBOARD_URI, render_dashboard
-from .web import login_page
+from .web import ICON_SVG, login_page
 
 UI_MIME = "text/html;profile=mcp-app"
 LOGIN_PATH = "/login"
 DASHBOARD_PATH = "/dashboard"
+MANIFEST_PATH = "/manifest.webmanifest"
+ICON_PATH = "/icon.svg"
 DASHBOARD_COOKIE = "wm_dash"
 
 # What may be registered as a username. ``admin`` is reserved for the .env account.
@@ -548,6 +550,35 @@ def create_app(settings: Settings) -> Starlette:
                 status_code=400,
             )
         return RedirectResponse(redirect, status_code=302)
+
+    # --- PWA manifest (lets the dashboard be installed as an app) -----------
+
+    @mcp.custom_route(MANIFEST_PATH, methods=["GET"])  # type: ignore[untyped-decorator]
+    async def manifest(request: Request) -> Response:
+        return JSONResponse(
+            {
+                "name": "weight-mcp",
+                "short_name": "Weight",
+                "start_url": DASHBOARD_PATH,
+                "scope": DASHBOARD_PATH,
+                "display": "standalone",
+                "background_color": "#0d1117",
+                "theme_color": "#0d1117",
+                "icons": [
+                    {
+                        "src": ICON_PATH,
+                        "sizes": "any",
+                        "type": "image/svg+xml",
+                        "purpose": "any",
+                    }
+                ],
+            },
+            media_type="application/manifest+json",
+        )
+
+    @mcp.custom_route(ICON_PATH, methods=["GET"])  # type: ignore[untyped-decorator]
+    async def icon(request: Request) -> Response:
+        return Response(ICON_SVG, media_type="image/svg+xml")
 
     # --- dashboard web page (fallback link target) --------------------------
 

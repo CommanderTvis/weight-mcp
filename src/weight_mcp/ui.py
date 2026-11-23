@@ -11,18 +11,13 @@ from datetime import date, timedelta
 from html import escape
 
 from .models import FoodLog, Progress, WeightEntry
+from .web import FAVICON
 
 # The MCP Apps resource URI for the dashboard. Lives here (next to the rendered
 # HTML) because the in-page Refresh button reads the resource back through it;
 # server.py imports it for the tool/resource wiring so there's one source.
 DASHBOARD_URI = "ui://weight-mcp/dashboard"
 
-_FAVICON = (
-    '<link rel="icon" href="data:image/svg+xml,'
-    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>"
-    "<path fill='%234f9dff' d='M2 9h2.5v6H2zm4-2h2.5v10H6zm9.5 0H18v10h-2.5z"
-    "m4 2H22v6h-2.5zM9.5 11h5v2h-5z'/></svg>\">"
-)
 
 _CSS = """
 :root {
@@ -347,7 +342,7 @@ def render_dashboard(
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>weight-mcp dashboard</title>
-{_FAVICON}
+{FAVICON}
 <style>{_CSS}</style></head>
 <body>
 <button class="refresh" type="button" aria-label="Refresh dashboard">↻ Refresh</button>

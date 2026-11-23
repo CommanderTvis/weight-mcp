@@ -515,3 +515,14 @@ def test_session_cleanup_does_not_close_database(client: TestClient) -> None:
     s2 = McpSession(client, token)
     res2 = s2.call_tool("log_food", {"name": "banana", "kcal": 100, "protein_g": 1})
     assert not res2.get("isError"), _text(res2)
+
+
+def test_dashboard_is_installable_as_pwa(client: TestClient) -> None:
+    # Manifest and icon are public so the browser can fetch them before sign-in.
+    manifest = client.get("/manifest.webmanifest")
+    assert manifest.status_code == 200
+    body = manifest.json()
+    assert body["start_url"] == "/dashboard"
+    assert body["display"] == "standalone"
+    assert client.get(body["icons"][0]["src"]).status_code == 200
+    assert 'rel="manifest"' in client.get("/dashboard").text

@@ -2,11 +2,23 @@
 
 from html import escape
 
-_FAVICON = (
+ICON_SVG = (
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>"
+    "<rect width='24' height='24' fill='#0d1117'/>"
+    "<path fill='#4f9dff' d='M2 9h2.5v6H2zm4-2h2.5v10H6zm9.5 0H18v10h-2.5z"
+    "m4 2H22v6h-2.5zM9.5 11h5v2h-5z'/></svg>"
+)
+
+FAVICON = (
     '<link rel="icon" href="data:image/svg+xml,'
     "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>"
     "<path fill='%234f9dff' d='M2 9h2.5v6H2zm4-2h2.5v10H6zm9.5 0H18v10h-2.5z"
     "m4 2H22v6h-2.5zM9.5 11h5v2h-5z'/></svg>\">"
+    '<link rel="manifest" href="/manifest.webmanifest">'
+    '<link rel="apple-touch-icon" href="/icon.svg">'
+    '<meta name="theme-color" content="#0d1117">'
+    '<meta name="mobile-web-app-capable" content="yes">'
+    '<meta name="apple-mobile-web-app-capable" content="yes">'
 )
 
 _PAGE = (
@@ -15,7 +27,7 @@ _PAGE = (
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>weight-mcp · sign in</title>
 """
-    + _FAVICON
+    + FAVICON
     + """
 <style>
   :root {{ color-scheme: light dark; }}
