@@ -37,7 +37,7 @@ RUN sed -i 's|/usr/local/bin|/usr/bin|g' /app/.venv/pyvenv.cfg \
     && install -d -o 10001 -g 10001 -m 750 /runtime-data
 
 # --- runtime stage: no shell or package manager ----------------------------
-FROM gcr.io/distroless/python3-debian13:nonroot@sha256:ed91505d162119a1e46552bc7f471c77737729a525269a7e9b60646807564601
+FROM gcr.io/distroless/python3-debian13:nonroot@sha256:806765f9f0863a1f36ce5f796983fed4eced9ec367e67e2f62f57f3e325c60b6
 
 WORKDIR /app
 
